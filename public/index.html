@@ -112,16 +112,20 @@
                   <input id="edit-pattern-b" type="color" class="color-input" value="#c2410c" />
                   <input id="edit-pattern-c" type="color" class="color-input" value="#f5c451" />
                   <button id="pattern-shuffle" type="button" class="btn">Shuffle</button>
-                  <select id="pattern-harmony" class="input" aria-label="Colour harmony">
-                    <option value="complementary">Complementary</option>
-                    <option value="analogous">Analogous</option>
-                    <option value="triadic">Triadic</option>
-                    <option value="mono">Monochrome</option>
-                    <option value="warm">Warm</option>
-                    <option value="cool">Cool</option>
-                  </select>
                 </span>
               </div>
+              <label class="slider">
+                <span class="field-label">Palette</span>
+                <select id="pattern-harmony" class="input">
+                  <option value="complementary">Complementary</option>
+                  <option value="analogous">Analogous</option>
+                  <option value="triadic">Triadic</option>
+                  <option value="mono">Monochrome</option>
+                  <option value="warm">Warm</option>
+                  <option value="cool">Cool</option>
+                </select>
+                <output class="hint">recolours now</output>
+              </label>
               <label class="slider">
                 <span class="field-label">Scale</span>
                 <input id="edit-pattern-scale" type="range" min="10" max="120" value="50" />

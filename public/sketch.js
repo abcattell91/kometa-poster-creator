@@ -1516,36 +1516,19 @@ class ElementBuiler {
             el.onchange = () => ElementBuiler.previewDraft();
         }
 
-        document.querySelector('#pattern-shuffle').onclick = () => {
-            // A fresh seed plus three hues picked to relate to each other,
-            // rather than three independent randoms that usually clash.
-            const hex = (h, s, l) => {
-                const f = (n) => {
-                    const k = (n + h / 30) % 12;
-                    const chroma = s * Math.min(l, 1 - l);
-                    const v = l - chroma * Math.max(-1, Math.min(k - 3, 9 - k, 1));
-                    return Math.round(v * 255).toString(16).padStart(2, '0');
-                };
-                return `#${f(0)}${f(8)}${f(4)}`;
-            };
-            const wrap = (h) => ((h % 360) + 360) % 360;
-            const base = Math.floor(Math.random() * 360);
-            const offsets = {
-                complementary: [0, 180, 200],
-                analogous: [0, 30, 60],
-                triadic: [0, 120, 240],
-                mono: [0, 0, 0],
-                // Fixed sectors: warm reds/oranges, cool blues/greens.
-                warm: [15, 35, 50],
-                cool: [190, 215, 250]
-            }[document.querySelector('#pattern-harmony').value];
-            const fixed = ['warm', 'cool']
-                .includes(document.querySelector('#pattern-harmony').value);
+        // Changing the palette recolours immediately, keeping the current hue
+        // as the base — a dropdown that only took effect on a later button
+        // press read as broken.
+        document.querySelector('#pattern-harmony').onchange = () => {
+            ElementBuiler.applyHarmony(
+                ElementBuiler.hueOf(document.querySelector('#edit-pattern-a').value));
+            document.querySelector('input[name="bg"][value="pattern"]').checked = true;
+            ElementBuiler.previewDraft();
+        };
 
-            const hues = offsets.map((o) => (fixed ? o : wrap(base + o)));
-            document.querySelector('#edit-pattern-a').value = hex(hues[0], 0.5, 0.16);
-            document.querySelector('#edit-pattern-b').value = hex(hues[1], 0.65, 0.42);
-            document.querySelector('#edit-pattern-c').value = hex(hues[2], 0.8, 0.68);
+        document.querySelector('#pattern-shuffle').onclick = () => {
+            // Same palette rules, but a new base hue and a new seed.
+            ElementBuiler.applyHarmony(Math.floor(Math.random() * 360));
             document.querySelector('#edit-pattern-seed').value =
                 1 + Math.floor(Math.random() * 999);
             document.querySelector('input[name="bg"][value="pattern"]').checked = true;
@@ -1887,6 +1870,55 @@ class ElementBuiler {
     static defaultDim() {
         const dim = document.querySelector('#edit-dim');
         if (Number(dim.value) === 0) dim.value = 30;
+    }
+
+    /** Hue (0–359) of a #rrggbb string. */
+    static hueOf(hex) {
+        const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+        const max = Math.max(r, g, b);
+        const span = max - Math.min(r, g, b);
+        if (!span) return 0;
+        const h = max === r ? ((g - b) / span) % 6
+            : max === g ? (b - r) / span + 2
+                : (r - g) / span + 4;
+        return ((h * 60) % 360 + 360) % 360;
+    }
+
+    /**
+     * Set the three pattern colours from one base hue, related by the chosen
+     * palette. Shared by Shuffle and the palette dropdown so both agree.
+     */
+    static applyHarmony(base) {
+        const hex = (h, s, l) => {
+            const f = (n) => {
+                const k = (n + h / 30) % 12;
+                const chroma = s * Math.min(l, 1 - l);
+                const v = l - chroma * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+                return Math.round(v * 255).toString(16).padStart(2, '0');
+            };
+            return `#${f(0)}${f(8)}${f(4)}`;
+        };
+        const wrap = (h) => ((h % 360) + 360) % 360;
+        const choice = document.querySelector('#pattern-harmony').value;
+        const offsets = {
+            complementary: [0, 180, 200],
+            analogous: [0, 30, 60],
+            triadic: [0, 120, 240],
+            mono: [0, 0, 0],
+            // Fixed sectors: warm reds/oranges, cool blues/greens.
+            warm: [15, 35, 50],
+            cool: [190, 215, 250]
+        }[choice];
+        const fixed = ['warm', 'cool'].includes(choice);
+
+        const hues = offsets.map((o) => (fixed ? o : wrap(base + o)));
+        // Monochrome separates by lightness alone, so it needs a wider spread.
+        const shades = choice === 'mono'
+            ? [[0.45, 0.12], [0.55, 0.4], [0.35, 0.78]]
+            : [[0.5, 0.16], [0.65, 0.42], [0.8, 0.68]];
+        for (const [i, sel] of ['#edit-pattern-a', '#edit-pattern-b', '#edit-pattern-c'].entries()) {
+            document.querySelector(sel).value = hex(hues[i], shades[i][0], shades[i][1]);
+        }
     }
 
     static resetAdjustments() {

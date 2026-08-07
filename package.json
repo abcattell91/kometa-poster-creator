@@ -1,8 +1,11 @@
 {
   "name": "poster-creator",
   "version": "1.0.0",
-  "description": "",
+  "description": "Generate Kometa collection posters in the browser",
   "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
   "author": "",
   "license": "ISC",
   "dependencies": {

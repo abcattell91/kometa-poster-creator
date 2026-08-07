@@ -85,6 +85,7 @@ function setup() {
     ElementBuiler.editor();
     ElementBuiler.download();
     ElementBuiler.cancel();
+    ElementBuiler.uploadToPlex();
     Plex.attach();
     Kometa.attach();
 }
@@ -351,6 +352,55 @@ function collectionFolder(name) {
 function assetPath(name) {
     const folder = collectionFolder(name);
     return folder ? `${folder}/poster.png` : 'poster.png';
+}
+
+/**
+ * Render each poster and set it as the artwork on its Plex collection. Same
+ * loop shape as runExport, but writing to the user's server instead of a zip.
+ */
+async function runUpload(list) {
+    if (running || !list.length) return;
+
+    const matched = list.filter((poster) => Plex.keyFor(poster));
+    const skipped = list.length - matched.length;
+    if (!matched.length) {
+        UI.caption('None of the selected posters match a collection in the chosen Plex library.');
+        return;
+    }
+    if (!confirm(`Upload ${matched.length} poster(s) to Plex?\n\n`
+        + `This replaces the current artwork on those collections. Plex keeps the old `
+        + `poster in each collection's poster list, so you can switch back there.`
+        + (skipped ? `\n\n${skipped} selected poster(s) have no matching Plex collection and will be skipped.` : ''))) {
+        return;
+    }
+
+    running = true;
+    cancelled = false;
+    UI.runStart(matched.length);
+    const failures = [];
+
+    for (let i = 0; i < matched.length; i++) {
+        if (cancelled) break;
+        const poster = matched[i];
+        UI.progress(i, matched.length, poster.name);
+        await drawPoster(poster);
+
+        try {
+            const blob = await new Promise((resolve) => cvn.elt.toBlob(resolve, 'image/png'));
+            await Plex.uploadPoster(Plex.keyFor(poster), await blob.arrayBuffer());
+        } catch (err) {
+            failures.push(`${poster.name}: ${err.message}`);
+        }
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+
+    running = false;
+    const done = matched.length - failures.length;
+    UI.runEnd(cancelled ? 'Cancelled'
+        : failures.length ? `Uploaded ${done}, ${failures.length} failed`
+            : `Uploaded ${done} poster${done === 1 ? '' : 's'} to Plex`);
+    if (failures.length) console.error('Plex upload failures:\n' + failures.join('\n'));
+    ElementBuiler.renderItems();
 }
 
 /** Posters currently ticked, in collection order. */
@@ -763,7 +813,7 @@ const Plex = {
         const body = await this.get(
             `${this.server}/library/sections/${key}/collections?${this.params()}`);
         this.collections = (body.MediaContainer?.Metadata ?? [])
-            .map((m) => ({ title: m.title, thumb: m.thumb }));
+            .map((m) => ({ title: m.title, thumb: m.thumb, key: m.ratingKey }));
         this.syncDatalist();
         // Without this the Import button stays hidden, which is the only
         // visible entry point to the collections just fetched.
@@ -791,6 +841,45 @@ const Plex = {
         return url;
     },
 
+    /**
+     * The Plex ratingKey for a poster: the one captured at import, or matched
+     * by name against the selected library. The name match means a poster you
+     * built by hand can be uploaded too, as long as its name matches a
+     * collection in the library currently chosen above.
+     */
+    keyFor(poster) {
+        if (poster.plexKey) return poster.plexKey;
+        const name = collectionFolder(poster.name).toLowerCase();
+        return this.collections.find((c) => c.title.toLowerCase() === name)?.key ?? null;
+    },
+
+    /**
+     * Upload a PNG and make it the collection's selected poster.
+     *
+     * Posted as a bare ArrayBuffer with no Content-Type: an `image/png` header
+     * is not CORS-safelisted and would force a preflight against the user's own
+     * server. Without it this stays a simple request. Plex sniffs the image
+     * anyway, and keeps the previous poster in the collection's poster list, so
+     * this is reversible from Plex itself.
+     */
+    async uploadPoster(ratingKey, buffer) {
+        const response = await fetch(
+            `${this.server}/library/metadata/${ratingKey}/posters?${this.params()}`,
+            { method: 'POST', body: buffer });
+        if (!response.ok) {
+            throw new Error(response.status === 401
+                ? 'Plex rejected the token — sign in again.'
+                : `Plex returned ${response.status}.`);
+        }
+        // The cached thumb is now stale.
+        for (const [path, url] of this.thumbs) {
+            if (path.includes(`/${ratingKey}/`)) {
+                URL.revokeObjectURL(url);
+                this.thumbs.delete(path);
+            }
+        }
+    },
+
     /** Feeds the native autocomplete on the poster name field. */
     syncDatalist() {
         const list = document.querySelector('#plex-collections');
@@ -811,11 +900,12 @@ const Plex = {
         // and no white frame, so what you see is what Plex has today. Only the
         // thumb path is stored — the bytes are fetched on demand, since 86
         // inlined images would blow the localStorage budget many times over.
-        customCollections[name] = this.collections.map(({ title, thumb }) => ({
+        customCollections[name] = this.collections.map(({ title, thumb, key }) => ({
             type: 'collection',
             name: title,
             // Marks the name as owned by Plex, so the editor locks it.
             plex: true,
+            plexKey: key,
             lines: [],
             plexThumb: thumb,
             border: false,
@@ -834,6 +924,8 @@ const Plex = {
         document.querySelector('#plex-server').hidden = !connected;
         document.querySelector('#plex-library').hidden = !connected;
         document.querySelector('#plex-import').hidden = !this.collections.length;
+        // Signing in or changing library changes what can be uploaded.
+        UI.selectionCount();
     },
 
     attach() {
@@ -1029,6 +1121,7 @@ const UI = {
         document.querySelector('#progress').hidden = false;
         document.querySelector('#cancel').hidden = false;
         document.querySelector('#download').disabled = true;
+        document.querySelector('#upload-plex').disabled = true;
         this.progress(0, total, '');
     },
     progress(done, total, label) {
@@ -1052,6 +1145,21 @@ const UI = {
         all.checked = n > 0 && n === posters.length;
         all.indeterminate = n > 0 && n < posters.length;
         document.querySelector('#download').disabled = running || n === 0;
+
+        // Only offered when signed in; the count says how many of the ticked
+        // posters actually match a collection in the chosen library.
+        const upload = document.querySelector('#upload-plex');
+        upload.hidden = !Plex.token || !Plex.server;
+        if (!upload.hidden) {
+            const matched = selectedPosters().filter((poster) => Plex.keyFor(poster)).length;
+            upload.disabled = running || matched === 0;
+            upload.textContent = matched && matched !== n
+                ? `Upload ${matched} to Plex`
+                : 'Upload to Plex';
+            upload.title = matched
+                ? `${matched} of ${n} selected match a collection in the chosen library.`
+                : 'None of the selected posters match a collection in the chosen library.';
+        }
     }
 };
 
@@ -1714,5 +1822,9 @@ class ElementBuiler {
 
     static cancel() {
         document.querySelector('#cancel').onclick = () => { cancelled = true; };
+    }
+
+    static uploadToPlex() {
+        document.querySelector('#upload-plex').onclick = () => runUpload(selectedPosters());
     }
 }

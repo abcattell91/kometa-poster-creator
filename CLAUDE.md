@@ -164,6 +164,19 @@ cross-origin URL directly would taint it, and a tainted canvas makes
 path is persisted; 86 inlined images would exceed the localStorage budget many
 times over.
 
+**Upload to Plex** (`runUpload`) renders each selected poster and POSTs it to
+`/library/metadata/{ratingKey}/posters`, making it the collection's artwork —
+an alternative to the zip, not a replacement for it. The body is a bare
+`ArrayBuffer` with **no `Content-Type`**: `image/png` is not a CORS-safelisted
+value and would force a preflight against the user's own server, whereas
+omitting the header keeps it a simple request. Plex sniffs the image regardless,
+and retains the previous poster in the collection's poster list, so the change
+is reversible from Plex itself.
+
+`Plex.keyFor()` resolves the ratingKey from the poster's `plexKey` (captured at
+import) or by matching its name against the selected library — so a poster built
+by hand can be uploaded too, provided its name matches a collection there.
+
 The token lives in localStorage (`kometa-plex-token`) and goes only to plex.tv
 and the user's own server. It grants full account access, so this is safe for
 the intended local-only use and **not** safe if the app is ever hosted publicly.

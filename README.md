@@ -41,6 +41,8 @@ a page (see below).
   Comfortaa, Inter).
 - **Plex** — sign in to pull your real collection names as autocomplete, or
   import a whole library's collections along with their current artwork.
+- **Two ways out** — download the zip for Kometa, or upload posters straight to
+  your Plex collections without leaving the page.
 
 ### Backgrounds
 
@@ -72,6 +74,17 @@ Summer 2024/poster.png
 **Folder names must match your Plex collection names exactly** — a mismatch
 means Kometa silently applies the poster to nothing. Connecting Plex is the
 easiest way to avoid that: imported names are taken from Plex and locked.
+
+### Or upload straight to Plex
+
+When signed in, **Upload to Plex** sets the rendered poster as the artwork on
+the matching collection directly, skipping the zip and the assets directory
+entirely. It only touches collections whose names match, tells you how many of
+your selection matched before uploading, and Plex keeps the previous poster in
+each collection's poster list — so it can be undone from Plex.
+
+Kometa may overwrite these on its next run if it manages the same collections;
+the zip route is the one that survives that.
 
 ## Environment variables
 

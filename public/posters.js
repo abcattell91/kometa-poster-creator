@@ -263,6 +263,27 @@ for (let year = 2050; year >= 2000; year--) {
     }
 }
 
+const ANIME_TRENDING = [
+    {
+        "type": "chart",
+        "name": "Simkl Trending Today/poster",
+        "lines": ["Today", "Simkl trending"],
+        "color": "#33A1FF"
+    },
+    {
+        "type": "chart",
+        "name": "Simkl Trending This Week/poster",
+        "lines": ["This Week", "Simkl trending"],
+        "color": "#33A1FF"
+    },
+    {
+        "type": "chart",
+        "name": "Simkl Trending This Month/poster",
+        "lines": ["This Month", "Simkl trending"],
+        "color": "#33A1FF"
+    }
+];
+
 const ANIME = {
     CHART: [
         {
@@ -2354,7 +2375,8 @@ const POSTERS = {
     'Anime': {
         'Chart': ANIME.CHART,
         'Genre': ANIME.GENRE,
-        'Season': ANIME.SEASON
+        'Season': ANIME.SEASON,
+        'Trending': ANIME_TRENDING
     },
     'Show': {
         'Chart': SHOW.CHART,
@@ -2363,5 +2385,5 @@ const POSTERS = {
     'Shared': {
         'Audio': SHARED.AUDIO,
         'Resolution': SHARED.RESOLUTION
-    }
+    },
 };

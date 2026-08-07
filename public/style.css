@@ -1,20 +1,821 @@
+:root {
+  --bg: #f6f6f7;
+  --surface: #ffffff;
+  --surface-2: #f0f0f2;
+  --border: #e0e0e4;
+  --text: #17171a;
+  --muted: #6b6b75;
+  --accent: #17171a;
+  --accent-text: #ffffff;
+  --ring: #8a8aff;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .05), 0 8px 24px rgba(0, 0, 0, .06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e0e11;
+    --surface: #17171b;
+    --surface-2: #1f1f25;
+    --border: #2c2c34;
+    --text: #ececf0;
+    --muted: #9a9aa6;
+    --accent: #ececf0;
+    --accent-text: #17171a;
+    --ring: #7a7aff;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* A class that sets `display` outranks the UA's [hidden] rule, so restate it. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
   padding: 0;
 }
 
-canvas {
-  display: block;
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-*::-webkit-scrollbar{
-  height: 8px;
-  width: 8px;
-  background: gray;
-  border-radius: 5px;
+/* ---------- top bar ---------- */
+
+.topbar {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
 }
-*::-webkit-scrollbar-thumb:horizontal{
-  background: #000;
-  border-radius: 10px;
+
+.wordmark {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+
+.wordmark span {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pill {
+  padding: 7px 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+
+.pill:hover {
+  background: var(--surface-2);
+}
+
+.pill[data-state="active"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.pill .pill-count {
+  margin-left: 6px;
+  opacity: .55;
+  font-variant-numeric: tabular-nums;
+}
+
+.plex-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+.plex-bar .btn,
+.plex-bar .input {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.plex-bar .input {
+  width: auto;
+  max-width: 220px;
+}
+
+.plex-bar .hint {
+  flex: 1;
+  min-width: 180px;
+}
+
+/* ---------- layout ---------- */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 460px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.preview {
+  position: sticky;
+  top: 24px;
+}
+
+.canvas-frame {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+/* p5 writes inline pixel width/height onto the canvas, hence !important */
+canvas {
+  display: block;
+  width: 100% !important;
+  height: auto !important;
+  aspect-ratio: 600 / 900;
+}
+
+.caption {
+  margin: 10px 2px 0;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ---------- panel ---------- */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.tabpanel {
+  flex: 1;
+  min-height: 0;
+  padding: 16px;
+}
+
+/* ---------- items ---------- */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.toolbar .input {
+  flex: 1;
+}
+
+.select-all {
+  flex-shrink: 0;
+}
+
+.items-list {
+  display: grid;
+  gap: 6px;
+  max-height: 52vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+
+.item:hover {
+  background: var(--surface-2);
+}
+
+.item[data-selected="true"] {
+  border-color: color-mix(in srgb, var(--ring) 50%, var(--border));
+}
+
+.item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.item-title {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-meta {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.swatch {
+  flex-shrink: 0;
+  width: 14px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background-size: cover;
+  background-position: center;
+}
+
+.empty {
+  margin: 0;
+  padding: 32px 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ---------- custom collection editor ---------- */
+
+.editor {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.editor-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.editor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.editor-grid .field,
+.field.grow {
+  max-width: none;
+}
+
+.span-2 {
+  grid-column: span 2;
+}
+
+.bg-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.radio input {
+  accent-color: var(--ring);
+  cursor: pointer;
+}
+
+.color-input {
+  width: 40px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.file-input {
+  width: auto;
+  flex: 1;
+  min-width: 160px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+/* ---------- image adjustments ---------- */
+
+.adjust {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.adjust-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.slider {
+  display: grid;
+  grid-template-columns: 58px 1fr 46px;
+  align-items: center;
+  gap: 10px;
+}
+
+.slider .field-label {
+  margin: 0;
+}
+
+.slider .input {
+  width: 100%;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.slider input[type="range"] {
+  width: 100%;
+  accent-color: var(--ring);
+  cursor: pointer;
+}
+
+.slider output {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+#adjust-reset,
+#text-reset {
+  justify-self: start;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.section-toggle {
+  justify-self: start;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.section-toggle::before {
+  content: "▸ ";
+}
+
+.section-toggle[aria-expanded="true"]::before {
+  content: "▾ ";
+}
+
+/* Colour rows borrow the slider grid but need no numeric output column, so the
+   fixed 46px third column would clip anything sitting beside the swatch. */
+.slider-pair {
+  grid-template-columns: 58px auto minmax(0, 1fr);
+}
+
+.slider .color-input {
+  justify-self: start;
+}
+
+.slider .checkbox {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* ---------- wallhaven picker ---------- */
+
+.wh {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+.wh-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wh-search .input {
+  flex: 1;
+  min-width: 120px;
+}
+
+.wh-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.filter-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.filter-group .checkbox {
+  font-size: 12px;
+}
+
+.filter-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.filter-select .input {
+  width: auto;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.wh-key {
+  flex-basis: 100%;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+
+.wh-key .input {
+  width: 190px;
+  font-family: ui-monospace, monospace;
+}
+
+.wh-key .hint {
+  margin: 0;
+}
+
+.wh-key a {
+  color: inherit;
+}
+
+.wh-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-top: 10px;
+}
+
+/* Sentinel is the only child until a search runs, hence :has(). */
+.wh-grid:not(:has(.wh-thumb)) {
+  display: none;
+}
+
+/* Full-width row the IntersectionObserver watches to trigger the next page. */
+.wh-sentinel {
+  grid-column: 1 / -1;
+  height: 1px;
+}
+
+.wh-thumb {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background-color: var(--surface-2);
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+  transition: outline-color .12s;
+  outline: 2px solid transparent;
+}
+
+.wh-thumb:hover {
+  outline-color: var(--ring);
+}
+
+.wh-thumb[data-picked="true"] {
+  outline-color: var(--ring);
+  border-color: var(--ring);
+}
+
+.wh-purity {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #b8860b;
+  color: #fff;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.wh-purity[data-purity="nsfw"] {
+  background: var(--danger-solid);
+}
+
+.wh-res {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, .65);
+  color: #fff;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lock-note {
+  color: var(--ring);
+}
+
+.input:read-only {
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.hint-inline {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.warning {
+  margin: 0;
+  color: #b4690e;
+  font-size: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .warning {
+    color: #e0a758;
+  }
+}
+
+:root {
+  /* --danger is for text on a page background; --danger-solid backs white text. */
+  --danger: #c0392b;
+  --danger-solid: #c0392b;
+  --danger-tint: #fdecea;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --danger: #e8705f;
+    --danger-solid: #cf4436;
+    --danger-tint: #3a1f1c;
+  }
+}
+
+.danger {
+  color: var(--danger);
+}
+
+.item .danger:hover {
+  background: var(--danger-tint);
+}
+
+.pill-new {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+/* ---------- form controls ---------- */
+
+.input {
+  width: 100%;
+  padding: 8px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -1px;
+}
+
+.field {
+  display: block;
+  max-width: 320px;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.suffix,
+.hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hint {
+  display: block;
+  margin-top: 6px;
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox input,
+.item input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--ring);
+  cursor: pointer;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- actions ---------- */
+
+.actions {
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.button-row {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  padding: 9px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .12s, opacity .12s;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.btn-primary:hover:not(:disabled) {
+  opacity: .85;
+  background: var(--accent);
+}
+
+.btn-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+/* Declared after .btn so it wins at equal specificity. */
+.btn-danger {
+  background: var(--danger-solid);
+  border-color: var(--danger-solid);
+  color: #fff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger-solid) 85%, #000);
+  border-color: color-mix(in srgb, var(--danger-solid) 85%, #000);
+  color: #fff;
+}
+
+.actions-hint {
+  margin: 10px 0 0;
+  line-height: 1.45;
+}
+
+.actions-hint code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  font-size: 11px;
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.progress-track {
+  flex: 1;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.progress-bar {
+  width: 0%;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--ring);
+  transition: width .15s ease-out;
+}
+
+/* ---------- scrollbars ---------- */
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--border);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
 }

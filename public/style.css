@@ -624,22 +624,15 @@ canvas {
 
 .line-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 76px 30px 30px auto auto auto;
+  grid-template-columns: minmax(0, 1fr) 64px 30px auto auto auto;
   align-items: center;
   gap: 6px;
 }
 
 .line-row .line-size {
   width: 100%;
-  accent-color: var(--ring);
-  cursor: pointer;
-}
-
-.line-row .line-size-out {
-  color: var(--muted);
-  font-size: 11px;
+  padding: 6px 4px 6px 7px;
   font-variant-numeric: tabular-nums;
-  text-align: right;
 }
 
 .line-row .btn {

@@ -488,6 +488,7 @@ const TEXT_CONTROLS = [
     ['#edit-platecolor', 'plateColor', '#000000'],
     ['#edit-plateopacity', 'plateOpacity', 55, '#out-plateopacity', '%'],
     ['#edit-platepad', 'platePad', 18, '#out-platepad'],
+    ['#edit-plateradius', 'plateRadius', 0, '#out-plateradius'],
     ['#edit-stroke-w', 'strokeWidth', 0, '#out-stroke-w'],
     ['#edit-stroke-c', 'strokeColor', '#000000'],
     ['#edit-shadow-blur', 'shadowBlur', 0, '#out-shadow-blur'],
@@ -1752,24 +1753,22 @@ class ElementBuiler {
     static lineRow({ text = '', size = 72, colour = '#ffffff' } = {}) {
         const row = document.createElement('div');
         row.className = 'line-row';
+        // A number box rather than a slider: the row is narrow, and a range
+        // squeezed into it is almost impossible to set precisely.
         row.innerHTML = `
             <input type="text" class="input line-text" placeholder="Text" />
-            <input type="range" class="line-size" min="10" max="180" />
-            <output class="line-size-out"></output>
-            <input type="color" class="color-input line-colour" />
+            <input type="number" class="input line-size" min="8" max="220" step="1" title="Size in px" />
+            <input type="color" class="color-input line-colour" title="Line colour" />
             <button type="button" class="btn btn-ghost line-move" data-dir="-1" title="Move up">↑</button>
             <button type="button" class="btn btn-ghost line-move" data-dir="1" title="Move down">↓</button>
             <button type="button" class="btn btn-ghost danger line-del" title="Remove line">✕</button>`;
         row.querySelector('.line-text').value = text;
         row.querySelector('.line-size').value = size;
-        row.querySelector('.line-size-out').textContent = size;
         row.querySelector('.line-colour').value = colour;
 
         for (const field of row.querySelectorAll('.line-text, .line-size, .line-colour')) {
-            field.oninput = () => {
-                row.querySelector('.line-size-out').textContent = row.querySelector('.line-size').value;
-                ElementBuiler.previewDraft();
-            };
+            field.oninput = () => ElementBuiler.previewDraft();
+            field.onchange = () => ElementBuiler.previewDraft();
         }
         for (const button of row.querySelectorAll('.line-move')) {
             button.onclick = () => {
@@ -1802,7 +1801,8 @@ class ElementBuiler {
         const kept = rows
             .map((row) => ({
                 text: row.querySelector('.line-text').value.trim(),
-                size: Number(row.querySelector('.line-size').value),
+                // Guard against an empty or out-of-range box.
+                size: Math.min(220, Math.max(8, Number(row.querySelector('.line-size').value) || 72)),
                 colour: row.querySelector('.line-colour').value
             }))
             .filter((entry) => entry.text);

@@ -322,6 +322,7 @@ class PosterBuilder {
             // is what every existing poster expects.
             smallColorLink: true, smallColor: '#ffffff',
             plate: 'none', plateColor: '#000000', plateOpacity: 55, platePad: 18,
+            plateRadius: 0,
             strokeWidth: 0, strokeColor: '#000000',
             shadowBlur: 0, shadowY: 0, shadowOpacity: 60, bloom: 0
         };
@@ -474,7 +475,9 @@ class PosterBuilder {
         push();
         noStroke();
         fill(fillColor);
-        rect(x, top - pad, w, (bottom - top) + pad * 2);
+        // A bar spans the full width, so rounding it would clip at the edges.
+        const radius = s.plate === 'bar' ? 0 : Math.max(0, s.plateRadius);
+        rect(x, top - pad, w, (bottom - top) + pad * 2, radius);
         pop();
     }
 

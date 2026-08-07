@@ -361,33 +361,71 @@ function assetPath(name) {
 async function runUpload(list) {
     if (running || !list.length) return;
 
-    const matched = list.filter((poster) => Plex.keyFor(poster));
-    const skipped = list.length - matched.length;
-    if (!matched.length) {
-        UI.caption('None of the selected posters match a collection in the chosen Plex library.');
+    // Partition before doing anything: an ambiguous name is never guessed at.
+    const targets = [];
+    const ambiguous = [];
+    let unmatched = 0;
+    for (const poster of list) {
+        const found = Plex.resolve(poster);
+        if (!found) unmatched++;
+        else if (found.ambiguous) ambiguous.push({ poster, found });
+        else targets.push({ poster, found });
+    }
+
+    if (!targets.length) {
+        UI.caption(ambiguous.length
+            ? `${ambiguous.length} poster name(s) exist in more than one library — import the library you mean, then upload.`
+            : 'None of the selected posters match a Plex collection.');
+        if (ambiguous.length) console.warn('Ambiguous poster names:\n'
+            + ambiguous.map(({ poster, found }) =>
+                `  ${poster.name} → ${found.libraries.join(', ')}`).join('\n'));
         return;
     }
-    if (!confirm(`Upload ${matched.length} poster(s) to Plex?\n\n`
-        + `This replaces the current artwork on those collections. Plex keeps the old `
-        + `poster in each collection's poster list, so you can switch back there.`
-        + (skipped ? `\n\n${skipped} selected poster(s) have no matching Plex collection and will be skipped.` : ''))) {
-        return;
-    }
+
+    // Show exactly which collection in which library each poster will hit.
+    const byLibrary = {};
+    for (const { found } of targets) byLibrary[found.library] = (byLibrary[found.library] ?? 0) + 1;
+    const lock = document.querySelector('#plex-lock').checked;
+
+    const message = [
+        `Upload ${targets.length} poster(s) to Plex?`,
+        '',
+        ...Object.entries(byLibrary).map(([library, n]) => `  ${n} → ${library}`),
+        '',
+        'This replaces the current artwork on those collections. Plex keeps the old',
+        "poster in each collection's poster list, so you can switch back there.",
+        lock ? '\nThe poster field will also be locked against Plex metadata refreshes.' : '',
+        ambiguous.length
+            ? `\n${ambiguous.length} skipped — the name exists in more than one library: `
+                + ambiguous.map(({ poster }) => poster.name).join(', ')
+            : '',
+        unmatched ? `\n${unmatched} skipped — no matching collection.` : ''
+    ].join('\n');
+    if (!confirm(message)) return;
 
     running = true;
     cancelled = false;
-    UI.runStart(matched.length);
+    UI.runStart(targets.length);
     const failures = [];
+    const lockFailures = [];
 
-    for (let i = 0; i < matched.length; i++) {
+    for (let i = 0; i < targets.length; i++) {
         if (cancelled) break;
-        const poster = matched[i];
-        UI.progress(i, matched.length, poster.name);
+        const { poster, found } = targets[i];
+        UI.progress(i, targets.length, `${poster.name} → ${found.library}`);
         await drawPoster(poster);
 
         try {
             const blob = await new Promise((resolve) => cvn.elt.toBlob(resolve, 'image/png'));
-            await Plex.uploadPoster(Plex.keyFor(poster), await blob.arrayBuffer());
+            await Plex.uploadPoster(found.key, await blob.arrayBuffer());
+            if (lock) {
+                // A failed lock must not read as a failed upload.
+                try {
+                    await Plex.lockPoster(found.key);
+                } catch (err) {
+                    lockFailures.push(`${poster.name}: ${err.message}`);
+                }
+            }
         } catch (err) {
             failures.push(`${poster.name}: ${err.message}`);
         }
@@ -395,11 +433,18 @@ async function runUpload(list) {
     }
 
     running = false;
-    const done = matched.length - failures.length;
-    UI.runEnd(cancelled ? 'Cancelled'
-        : failures.length ? `Uploaded ${done}, ${failures.length} failed`
-            : `Uploaded ${done} poster${done === 1 ? '' : 's'} to Plex`);
+    const done = targets.length - failures.length;
+    UI.runEnd([
+        cancelled ? 'Cancelled' : `Uploaded ${done} of ${targets.length}`,
+        failures.length ? `${failures.length} failed` : '',
+        lockFailures.length ? `${lockFailures.length} could not be locked` : ''
+    ].filter(Boolean).join(' · '));
+
     if (failures.length) console.error('Plex upload failures:\n' + failures.join('\n'));
+    if (lockFailures.length) {
+        console.warn('Uploaded, but locking failed (the PUT needs a CORS preflight your '
+            + 'server may not answer):\n' + lockFailures.join('\n'));
+    }
     ElementBuiler.renderItems();
 }
 
@@ -649,8 +694,11 @@ const Kometa = {
  */
 const Plex = {
     PRODUCT: 'Kometa Poster Creator',
-    // [{ title, thumb }] for the selected library.
+    // [{ title, thumb, key }] for the selected library.
     collections: [],
+    // Library sections, and every collection on the server indexed by name.
+    sections: [],
+    index: null,
     // Plex thumb path -> blob URL, resolved lazily and kept for the session.
     thumbs: new Map(),
 
@@ -795,6 +843,7 @@ const Plex = {
     async loadLibraries() {
         const body = await this.get(`${this.server}/library/sections?${this.params()}`);
         const sections = body.MediaContainer?.Directory ?? [];
+        this.sections = sections;
         const select = document.querySelector('#plex-library');
         select.innerHTML = '';
         for (const section of sections) {
@@ -804,6 +853,9 @@ const Plex = {
             select.appendChild(option);
         }
         this.render();
+        // Index every library up front so uploads can detect a name that exists
+        // in more than one of them.
+        await this.buildIndex();
         await this.loadCollections();
     },
 
@@ -842,15 +894,50 @@ const Plex = {
     },
 
     /**
-     * The Plex ratingKey for a poster: the one captured at import, or matched
-     * by name against the selected library. The name match means a poster you
-     * built by hand can be uploaded too, as long as its name matches a
-     * collection in the library currently chosen above.
+     * Index every library's collections by name, so a name match can tell
+     * whether it is unique across the whole server. "Action" commonly exists in
+     * Movies, TV *and* Anime; resolving against one library alone would upload
+     * to whichever happened to be selected.
      */
-    keyFor(poster) {
-        if (poster.plexKey) return poster.plexKey;
-        const name = collectionFolder(poster.name).toLowerCase();
-        return this.collections.find((c) => c.title.toLowerCase() === name)?.key ?? null;
+    async buildIndex() {
+        this.index = new Map();
+        const results = await Promise.all(this.sections.map(async (section) => {
+            try {
+                const body = await this.get(
+                    `${this.server}/library/sections/${section.key}/collections?${this.params()}`);
+                return (body.MediaContainer?.Metadata ?? [])
+                    .map((m) => ({ key: m.ratingKey, title: m.title, library: section.title }));
+            } catch {
+                return [];
+            }
+        }));
+        for (const entry of results.flat()) {
+            const name = entry.title.toLowerCase();
+            if (!this.index.has(name)) this.index.set(name, []);
+            this.index.get(name).push(entry);
+        }
+    },
+
+    /**
+     * Work out which Plex collection a poster targets.
+     *
+     * An imported poster carries a ratingKey, which is unique server-wide and
+     * therefore unambiguous. Anything else is matched by name — and a name that
+     * exists in more than one library is reported as ambiguous rather than
+     * guessed at.
+     */
+    resolve(poster) {
+        if (poster.plexKey) {
+            const known = [...(this.index?.values() ?? [])].flat()
+                .find((entry) => entry.key === poster.plexKey);
+            return { key: poster.plexKey, library: known?.library ?? 'Plex', exact: true };
+        }
+        const matches = this.index?.get(collectionFolder(poster.name).toLowerCase()) ?? [];
+        if (matches.length === 1) return { ...matches[0], exact: false };
+        if (matches.length > 1) {
+            return { ambiguous: true, libraries: matches.map((m) => m.library) };
+        }
+        return null;
     },
 
     /**
@@ -878,6 +965,19 @@ const Plex = {
                 this.thumbs.delete(path);
             }
         }
+    },
+
+    /**
+     * Lock the poster field so Plex's own agents won't replace it on a metadata
+     * refresh. Unlike the upload this is a PUT, which is not a CORS-simple
+     * method and does need a preflight — so it can fail where the upload
+     * succeeded, and is reported separately.
+     */
+    async lockPoster(ratingKey) {
+        const response = await fetch(
+            `${this.server}/library/metadata/${ratingKey}?${this.params({ 'thumb.locked': '1' })}`,
+            { method: 'PUT' });
+        if (!response.ok) throw new Error(`lock returned ${response.status}`);
     },
 
     /** Feeds the native autocomplete on the poster name field. */
@@ -1150,15 +1250,17 @@ const UI = {
         // posters actually match a collection in the chosen library.
         const upload = document.querySelector('#upload-plex');
         upload.hidden = !Plex.token || !Plex.server;
+        document.querySelector('#plex-lock-row').hidden = upload.hidden;
         if (!upload.hidden) {
-            const matched = selectedPosters().filter((poster) => Plex.keyFor(poster)).length;
-            upload.disabled = running || matched === 0;
-            upload.textContent = matched && matched !== n
-                ? `Upload ${matched} to Plex`
-                : 'Upload to Plex';
-            upload.title = matched
-                ? `${matched} of ${n} selected match a collection in the chosen library.`
-                : 'None of the selected posters match a collection in the chosen library.';
+            const resolved = selectedPosters().map((poster) => Plex.resolve(poster));
+            const ready = resolved.filter((r) => r && !r.ambiguous).length;
+            const clashes = resolved.filter((r) => r?.ambiguous).length;
+            upload.disabled = running || ready === 0;
+            upload.textContent = ready && ready !== n ? `Upload ${ready} to Plex` : 'Upload to Plex';
+            upload.title = [
+                ready ? `${ready} of ${n} selected match a Plex collection.` : 'No matching Plex collections.',
+                clashes ? `${clashes} skipped: the name exists in more than one library.` : ''
+            ].filter(Boolean).join(' ');
         }
     }
 };

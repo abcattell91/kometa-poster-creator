@@ -79,12 +79,25 @@ easiest way to avoid that: imported names are taken from Plex and locked.
 
 When signed in, **Upload to Plex** sets the rendered poster as the artwork on
 the matching collection directly, skipping the zip and the assets directory
-entirely. It only touches collections whose names match, tells you how many of
-your selection matched before uploading, and Plex keeps the previous poster in
-each collection's poster list — so it can be undone from Plex.
+entirely. Before uploading it shows you exactly what it will change, broken down
+by library.
 
-Kometa may overwrite these on its next run if it manages the same collections;
-the zip route is the one that survives that.
+**On matching the right collection.** A poster imported from Plex carries that
+collection's id, which is unique across the server, so there is no ambiguity.
+Anything else is matched by name — and because a name like "Action" usually
+exists in Movies, TV *and* Anime, a name that appears in more than one library
+is **skipped and reported**, never guessed at. To target one of those
+deliberately, import the library you mean and upload from there.
+
+**Lock poster** (optional, beside the button) also locks the poster field so
+Plex's own metadata agents won't replace it on a refresh. Be aware of what that
+does and doesn't cover: it stops Plex overwriting the image, but other tools
+driving the API — Kometa, the *arr* apps — can still set a poster or clear the
+lock. It is not a guarantee against them.
+
+Plex keeps the previous poster in each collection's poster list, so an upload
+can be undone from Plex itself. If Kometa manages the same collections, the zip
+route is the one that survives its next run.
 
 ## Environment variables
 

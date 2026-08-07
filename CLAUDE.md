@@ -173,9 +173,19 @@ omitting the header keeps it a simple request. Plex sniffs the image regardless,
 and retains the previous poster in the collection's poster list, so the change
 is reversible from Plex itself.
 
-`Plex.keyFor()` resolves the ratingKey from the poster's `plexKey` (captured at
-import) or by matching its name against the selected library — so a poster built
-by hand can be uploaded too, provided its name matches a collection there.
+`Plex.resolve()` picks the target. A `plexKey` captured at import is unique
+server-wide and used directly. Otherwise the name is looked up in
+`Plex.index`, built by `buildIndex()` across **every** library — resolving
+against the selected library alone was a bug: "Action" exists in Movies, TV and
+Anime, so a poster would upload to whichever library happened to be selected. A
+name found in more than one library returns `{ambiguous: true}` and is skipped
+with a report rather than guessed at.
+
+`lockPoster()` sets `thumb.locked=1` so Plex's agents leave the image alone. It
+is a **PUT**, which is not a CORS-simple method and does need a preflight — so
+it can fail where the upload succeeded, and its failures are tracked separately
+so they never read as a failed upload. It does not stop other API clients
+(Kometa, *arr*) from overwriting or unlocking.
 
 The token lives in localStorage (`kometa-plex-token`) and goes only to plex.tv
 and the user's own server. It grants full account access, so this is safe for

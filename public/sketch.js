@@ -1506,11 +1506,14 @@ class ElementBuiler {
             radio.onchange = () => ElementBuiler.previewDraft();
         }
 
-        // `input` rather than `change` so the canvas tracks the drag live.
+        // `input` so the canvas tracks a drag live, plus `change` because not
+        // every browser fires `input` on <select>.
         for (const sel of ['#edit-zoom', '#edit-x', '#edit-y', '#edit-dim', '#edit-fit',
             '#edit-border', '#edit-pattern', '#edit-pattern-a', '#edit-pattern-b',
             '#edit-pattern-c', '#edit-pattern-scale', '#edit-pattern-seed']) {
-            document.querySelector(sel).oninput = () => ElementBuiler.previewDraft();
+            const el = document.querySelector(sel);
+            el.oninput = () => ElementBuiler.previewDraft();
+            el.onchange = () => ElementBuiler.previewDraft();
         }
 
         document.querySelector('#pattern-shuffle').onclick = () => {

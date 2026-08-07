@@ -95,17 +95,28 @@ class PosterBuilder {
         const step = Math.max(14, scale);
         const wash = () => { fill(a); rect(0, 0, width, height); };
 
+        // Native canvas gradients: smoother than banding it by hand, and fast.
+        const stops = (grad) => {
+            grad.addColorStop(0, a.toString());
+            grad.addColorStop(Math.max(0.1, Math.min(0.9, scale / 120)), b.toString());
+            grad.addColorStop(1, c.toString());
+            drawingContext.fillStyle = grad;
+            drawingContext.fillRect(0, 0, width, height);
+        };
+
         if (name === 'gradient') {
-            for (let y = 0; y < height; y++) {
-                stroke(ramp(y / height));
-                line(0, y, width, y);
-            }
+            // Seed picks the angle, scale moves the midpoint.
+            const angle = random(TWO_PI);
+            const reach = Math.max(width, height);
+            stops(drawingContext.createLinearGradient(
+                width / 2 - Math.cos(angle) * reach / 2, height / 2 - Math.sin(angle) * reach / 2,
+                width / 2 + Math.cos(angle) * reach / 2, height / 2 + Math.sin(angle) * reach / 2));
         } else if (name === 'radial') {
-            fill(c); rect(0, 0, width, height);
-            for (let i = 240; i > 0; i--) {
-                fill(ramp(1 - i / 240));
-                circle(width / 2, height / 2, (i / 240) * height * 1.8);
-            }
+            // Seed offsets the centre, scale sets how far the glow reaches.
+            const cx = width * random(0.25, 0.75);
+            const cy = height * random(0.25, 0.75);
+            stops(drawingContext.createRadialGradient(
+                cx, cy, 0, cx, cy, height * (0.45 + scale / 120)));
         } else if (name === 'mesh') {
             wash();
             drawingContext.filter = `blur(${Math.max(30, scale)}px)`;
@@ -116,33 +127,39 @@ class PosterBuilder {
             drawingContext.filter = 'none';
         } else if (name === 'waves') {
             wash();
+            const phase = random(TWO_PI);
             for (let i = 0; i < density; i++) {
                 fill(ramp(i / density));
                 beginShape();
                 vertex(0, height);
                 for (let x = 0; x <= width; x += 8) {
                     vertex(x, height * (i / density)
-                        + Math.sin((x / width) * TWO_PI + i) * (scale / 2) + scale);
+                        + Math.sin((x / width) * TWO_PI + i + phase) * (scale / 2) + scale);
                 }
                 vertex(width, height);
                 endShape(CLOSE);
             }
         } else if (name === 'rings') {
+            const cx = width * random(0.3, 0.7);
+            const cy = height * random(0.3, 0.7);
             for (let i = density; i > 0; i--) {
                 fill(ramp(i / density));
-                circle(width / 2, height / 2, (i / density) * height * 1.6);
+                circle(cx, cy, (i / density) * height * 1.6);
             }
         } else if (name === 'grid') {
             wash();
-            for (let x = step / 2; x < width + step; x += step) {
-                for (let y = step / 2; y < height + step; y += step) {
+            const ox = random(step);
+            const oy = random(step);
+            for (let x = ox - step; x < width + step; x += step) {
+                for (let y = oy - step; y < height + step; y += step) {
                     fill(ramp(y / height));
                     circle(x, y, step * 0.34);
                 }
             }
         } else if (name === 'checker') {
+            const shift = random(step);
             let row = 0;
-            for (let y = 0; y < height; y += step, row++) {
+            for (let y = -shift; y < height; y += step, row++) {
                 let col = 0;
                 for (let x = 0; x < width; x += step, col++) {
                     fill((row + col) % 2 ? ramp(x / width) : a);
@@ -153,7 +170,7 @@ class PosterBuilder {
             wash();
             push();
             translate(width / 2, height / 2);
-            rotate(radians(-30));
+            rotate(radians(random(-70, 70)));
             let i = 0;
             for (let x = -height; x < height; x += step, i++) {
                 fill(ramp(i / (height / step)));
@@ -220,6 +237,7 @@ class PosterBuilder {
             wash();
             push();
             translate(width / 2, height / 2);
+            rotate(random(TWO_PI));
             const rays = Math.max(8, density * 2);
             for (let i = 0; i < rays; i++) {
                 fill(ramp(i / rays));

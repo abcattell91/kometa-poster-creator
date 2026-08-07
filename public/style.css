@@ -616,6 +616,17 @@ canvas {
   cursor: not-allowed;
 }
 
+.pattern-colours {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pattern-colours .btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
 .hint-inline {
   color: var(--muted);
   font-weight: 400;

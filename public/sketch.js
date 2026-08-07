@@ -272,6 +272,13 @@ async function drawPoster(poster) {
 
     if (background) {
         await builder.url(background, poster);
+    } else if (poster.pattern) {
+        builder.pattern(poster.pattern, {
+            colorA: poster.patternA,
+            colorB: poster.patternB,
+            seed: poster.patternSeed,
+            scale: poster.patternScale
+        });
     } else if (poster.color) {
         builder.color(poster.color);
         builder.overlay(true);
@@ -467,8 +474,17 @@ const TEXT_CONTROLS = [
     ['#edit-text-x', 'textX', 0, '#out-text-x'],
     ['#edit-text-y', 'textY', 0, '#out-text-y'],
     ['#edit-swap', 'swap', false],
+    ['#edit-align', 'align', 'center'],
+    ['#edit-rotate', 'rotate', 0, '#out-rotate', '°'],
     ['#edit-textcolor', 'textColor', '#ffffff'],
     ['#edit-upper', 'uppercase', true],
+    ['#edit-smallcolor', 'smallColor', '#ffffff'],
+    ['#edit-smalllink', 'smallColorLink', true],
+    ['#edit-opacity', 'opacity', 100, '#out-opacity', '%'],
+    ['#edit-plate', 'plate', 'none'],
+    ['#edit-platecolor', 'plateColor', '#000000'],
+    ['#edit-plateopacity', 'plateOpacity', 55, '#out-plateopacity', '%'],
+    ['#edit-platepad', 'platePad', 18, '#out-platepad'],
     ['#edit-stroke-w', 'strokeWidth', 0, '#out-stroke-w'],
     ['#edit-stroke-c', 'strokeColor', '#000000'],
     ['#edit-shadow-blur', 'shadowBlur', 0, '#out-shadow-blur'],
@@ -1484,9 +1500,32 @@ class ElementBuiler {
         }
 
         // `input` rather than `change` so the canvas tracks the drag live.
-        for (const sel of ['#edit-zoom', '#edit-x', '#edit-y', '#edit-dim', '#edit-fit']) {
+        for (const sel of ['#edit-zoom', '#edit-x', '#edit-y', '#edit-dim', '#edit-fit',
+            '#edit-border', '#edit-pattern', '#edit-pattern-a', '#edit-pattern-b',
+            '#edit-pattern-scale', '#edit-pattern-seed']) {
             document.querySelector(sel).oninput = () => ElementBuiler.previewDraft();
         }
+
+        document.querySelector('#pattern-shuffle').onclick = () => {
+            // New seed and a fresh pair of hues, so one click explores widely.
+            const hue = () => Math.floor(Math.random() * 360);
+            const hex = (h, s, l) => {
+                const f = (n) => {
+                    const k = (n + h / 30) % 12;
+                    const a = s * Math.min(l, 1 - l);
+                    const v = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+                    return Math.round(v * 255).toString(16).padStart(2, '0');
+                };
+                return `#${f(0)}${f(8)}${f(4)}`;
+            };
+            const base = hue();
+            document.querySelector('#edit-pattern-a').value = hex(base, 0.55, 0.22);
+            document.querySelector('#edit-pattern-b').value = hex((base + 150) % 360, 0.7, 0.5);
+            document.querySelector('#edit-pattern-seed').value =
+                1 + Math.floor(Math.random() * 999);
+            document.querySelector('input[name="bg"][value="pattern"]').checked = true;
+            ElementBuiler.previewDraft();
+        };
 
         document.querySelector('#adjust-reset').onclick = () => {
             ElementBuiler.resetAdjustments();
@@ -1667,6 +1706,9 @@ class ElementBuiler {
             ...(editingPlexPoster ? { plex: true } : {}),
             ...ElementBuiler.readTextStyle()
         };
+        const patternSelected =
+            document.querySelector('input[name="bg"][value="pattern"]').checked;
+
         if (useImage || keepThumb) {
             if (useImage) poster.url = pendingImage;
             else poster.plexThumb = pendingPlexThumb;
@@ -1674,6 +1716,12 @@ class ElementBuiler {
             poster.zoom = num('#edit-zoom') / 100;
             poster.offsetX = num('#edit-x');
             poster.offsetY = num('#edit-y');
+        } else if (patternSelected) {
+            poster.pattern = document.querySelector('#edit-pattern').value;
+            poster.patternA = document.querySelector('#edit-pattern-a').value;
+            poster.patternB = document.querySelector('#edit-pattern-b').value;
+            poster.patternSeed = num('#edit-pattern-seed');
+            poster.patternScale = num('#edit-pattern-scale');
         } else {
             poster.color = document.querySelector('#edit-color').value;
         }
@@ -1699,6 +1747,16 @@ class ElementBuiler {
         const useImage = document.querySelector('input[name="bg"][value="image"]').checked
             && (pendingImage || pendingPlexThumb);
         document.querySelector('#img-adjust').hidden = !useImage;
+        document.querySelector('#pattern-rows').hidden =
+            !document.querySelector('input[name="bg"][value="pattern"]').checked;
+
+        for (const [slider, output, suffix] of [
+            ['#edit-pattern-scale', '#out-pattern-scale', ''],
+            ['#edit-pattern-seed', '#out-pattern-seed', '']
+        ]) {
+            document.querySelector(output).textContent =
+                document.querySelector(slider).value + suffix;
+        }
 
         for (const [slider, output, suffix] of [
             ['#edit-zoom', '#out-zoom', '%'], ['#edit-x', '#out-x', ''],
@@ -1768,7 +1826,13 @@ class ElementBuiler {
         pendingPlexThumb = poster.plexThumb ?? null;
         const hasImage = Boolean(poster.url || poster.plexThumb);
         document.querySelector('#edit-color').value = poster.color ?? '#FFA133';
-        document.querySelector(`input[name="bg"][value="${hasImage ? 'image' : 'color'}"]`).checked = true;
+        document.querySelector('#edit-pattern').value = poster.pattern ?? 'gradient';
+        document.querySelector('#edit-pattern-a').value = poster.patternA ?? '#1b2a4a';
+        document.querySelector('#edit-pattern-b').value = poster.patternB ?? '#c2410c';
+        document.querySelector('#edit-pattern-seed').value = poster.patternSeed ?? 1;
+        document.querySelector('#edit-pattern-scale').value = poster.patternScale ?? 50;
+        const mode = hasImage ? 'image' : poster.pattern ? 'pattern' : 'color';
+        document.querySelector(`input[name="bg"][value="${mode}"]`).checked = true;
         document.querySelector('#clear-image').hidden = !hasImage;
         document.querySelector('#edit-border').checked = poster.border !== false;
         document.querySelector('#edit-fit').value = poster.fit ?? 'cover';

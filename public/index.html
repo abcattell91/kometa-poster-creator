@@ -75,6 +75,41 @@
               <label class="radio"><input type="radio" name="bg" value="image" /> Image</label>
               <input id="edit-image" type="file" accept="image/*" class="input file-input" />
               <button id="clear-image" type="button" class="btn btn-ghost" hidden>Clear</button>
+              <label class="radio"><input type="radio" name="bg" value="pattern" /> Generated</label>
+            </div>
+
+            <div id="pattern-rows" class="adjust-rows" hidden>
+              <label class="slider">
+                <span class="field-label">Pattern</span>
+                <select id="edit-pattern" class="input">
+                  <option value="gradient">Gradient</option>
+                  <option value="mesh">Mesh blobs</option>
+                  <option value="waves">Waves</option>
+                  <option value="rings">Rings</option>
+                  <option value="grid">Dot grid</option>
+                  <option value="triangles">Low poly</option>
+                  <option value="noise">Clouds</option>
+                  <option value="stars">Starfield</option>
+                </select>
+              </label>
+              <div class="slider slider-pair">
+                <span class="field-label">Colours</span>
+                <span class="pattern-colours">
+                  <input id="edit-pattern-a" type="color" class="color-input" value="#1b2a4a" />
+                  <input id="edit-pattern-b" type="color" class="color-input" value="#c2410c" />
+                  <button id="pattern-shuffle" type="button" class="btn">Shuffle</button>
+                </span>
+              </div>
+              <label class="slider">
+                <span class="field-label">Scale</span>
+                <input id="edit-pattern-scale" type="range" min="10" max="120" value="50" />
+                <output id="out-pattern-scale">50</output>
+              </label>
+              <label class="slider">
+                <span class="field-label">Seed</span>
+                <input id="edit-pattern-seed" type="range" min="1" max="999" value="1" />
+                <output id="out-pattern-seed">1</output>
+              </label>
             </div>
 
             <div class="wh">
@@ -288,12 +323,59 @@
                 <label class="checkbox"><input id="edit-swap" type="checkbox" /> <span
                     class="hint-inline">big text on top</span></label>
               </div>
+              <label class="slider">
+                <span class="field-label">Align</span>
+                <select id="edit-align" class="input">
+                  <option value="center">Centre</option>
+                  <option value="left">Left</option>
+                  <option value="right">Right</option>
+                </select>
+              </label>
+              <label class="slider">
+                <span class="field-label">Rotate</span>
+                <input id="edit-rotate" type="range" min="-30" max="30" value="0" />
+                <output id="out-rotate">0°</output>
+              </label>
               <div class="slider slider-pair">
                 <span class="field-label">Colour</span>
                 <input id="edit-textcolor" type="color" class="color-input" value="#ffffff" />
                 <label class="checkbox"><input id="edit-upper" type="checkbox" checked /> <span
                     class="hint-inline">UPPERCASE</span></label>
               </div>
+              <div class="slider slider-pair">
+                <span class="field-label">Small hue</span>
+                <input id="edit-smallcolor" type="color" class="color-input" value="#ffffff" />
+                <label class="checkbox"><input id="edit-smalllink" type="checkbox" checked /> <span
+                    class="hint-inline">match big text</span></label>
+              </div>
+              <label class="slider">
+                <span class="field-label">Opacity</span>
+                <input id="edit-opacity" type="range" min="0" max="100" value="100" />
+                <output id="out-opacity">100%</output>
+              </label>
+
+              <label class="slider">
+                <span class="field-label">Plate</span>
+                <select id="edit-plate" class="input">
+                  <option value="none">None</option>
+                  <option value="bar">Bar — full width</option>
+                  <option value="box">Box — hugs the text</option>
+                </select>
+              </label>
+              <div class="slider slider-pair">
+                <span class="field-label">Plate hue</span>
+                <input id="edit-platecolor" type="color" class="color-input" value="#000000" />
+              </div>
+              <label class="slider">
+                <span class="field-label">Plate α</span>
+                <input id="edit-plateopacity" type="range" min="0" max="100" value="55" />
+                <output id="out-plateopacity">55%</output>
+              </label>
+              <label class="slider">
+                <span class="field-label">Plate pad</span>
+                <input id="edit-platepad" type="range" min="0" max="60" value="18" />
+                <output id="out-platepad">18</output>
+              </label>
 
               <label class="slider">
                 <span class="field-label">Outline</span>

@@ -33,10 +33,13 @@ a page (see below).
 - **Editing** — per-poster text, colour or image background, crop/zoom/pan,
   darkening, and full text styling: font, sizes, letter spacing, colour,
   outline, drop shadow, bloom and line order. Everything previews live.
-- **Backgrounds** — search [wallhaven.cc](https://wallhaven.cc) or browse the
+- **Backgrounds** — search [wallhaven.cc](https://wallhaven.cc), browse the
   ~16,000 images in
   [Kometa-Team/Default-Images](https://github.com/Kometa-Team/Default-Images),
-  or upload your own.
+  upload your own, or generate one: eight seeded patterns (gradient, mesh
+  blobs, waves, rings, dot grid, low poly, clouds, starfield) with two colours,
+  a scale and a shuffle button. Seeded means the same settings always reproduce
+  the same image, so a bulk export stays consistent.
 - **Fonts** — the bundled poster font plus the 13 Kometa defaults (Bebas Neue,
   Comfortaa, Inter).
 - **Plex** — sign in to pull your real collection names as autocomplete, or
@@ -54,7 +57,8 @@ purity, sort order and aspect ratio, above a grid of results](docs/screenshot-ba
 
 ### Text
 
-Font, sizes, spacing, colour, outline, shadow, bloom, position and line order,
+Font, sizes, spacing, alignment, rotation, colour (per line), opacity, outline,
+shadow, bloom, position, line order, and an optional plate behind the text —
 all previewing live.
 
 ![The Advanced Font Editing panel, with sliders for size, spacing, outline,

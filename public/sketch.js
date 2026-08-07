@@ -254,6 +254,10 @@ function ensureEditable() {
 /** Draw a single poster onto the shared canvas. */
 async function drawPoster(poster) {
     const builder = PosterBuilder.init(poster.type ?? 'default');
+    // Wipe the previous poster first. Many Kometa images are PNGs with
+    // transparency, and 'contain' leaves letterboxed edges — without an opaque
+    // base, each draw composites onto the last one instead of replacing it.
+    background(0);
     // Must resolve before any text is drawn, or the poster silently renders in
     // the fallback font.
     await KometaFonts.ensure(poster.font);

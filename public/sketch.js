@@ -282,6 +282,7 @@ async function drawPoster(poster) {
         builder.pattern(poster.pattern, {
             colorA: poster.patternA,
             colorB: poster.patternB,
+            colorC: poster.patternC,
             seed: poster.patternSeed,
             scale: poster.patternScale
         });
@@ -1508,25 +1509,40 @@ class ElementBuiler {
         // `input` rather than `change` so the canvas tracks the drag live.
         for (const sel of ['#edit-zoom', '#edit-x', '#edit-y', '#edit-dim', '#edit-fit',
             '#edit-border', '#edit-pattern', '#edit-pattern-a', '#edit-pattern-b',
-            '#edit-pattern-scale', '#edit-pattern-seed']) {
+            '#edit-pattern-c', '#edit-pattern-scale', '#edit-pattern-seed']) {
             document.querySelector(sel).oninput = () => ElementBuiler.previewDraft();
         }
 
         document.querySelector('#pattern-shuffle').onclick = () => {
-            // New seed and a fresh pair of hues, so one click explores widely.
-            const hue = () => Math.floor(Math.random() * 360);
+            // A fresh seed plus three hues picked to relate to each other,
+            // rather than three independent randoms that usually clash.
             const hex = (h, s, l) => {
                 const f = (n) => {
                     const k = (n + h / 30) % 12;
-                    const a = s * Math.min(l, 1 - l);
-                    const v = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+                    const chroma = s * Math.min(l, 1 - l);
+                    const v = l - chroma * Math.max(-1, Math.min(k - 3, 9 - k, 1));
                     return Math.round(v * 255).toString(16).padStart(2, '0');
                 };
                 return `#${f(0)}${f(8)}${f(4)}`;
             };
-            const base = hue();
-            document.querySelector('#edit-pattern-a').value = hex(base, 0.55, 0.22);
-            document.querySelector('#edit-pattern-b').value = hex((base + 150) % 360, 0.7, 0.5);
+            const wrap = (h) => ((h % 360) + 360) % 360;
+            const base = Math.floor(Math.random() * 360);
+            const offsets = {
+                complementary: [0, 180, 200],
+                analogous: [0, 30, 60],
+                triadic: [0, 120, 240],
+                mono: [0, 0, 0],
+                // Fixed sectors: warm reds/oranges, cool blues/greens.
+                warm: [15, 35, 50],
+                cool: [190, 215, 250]
+            }[document.querySelector('#pattern-harmony').value];
+            const fixed = ['warm', 'cool']
+                .includes(document.querySelector('#pattern-harmony').value);
+
+            const hues = offsets.map((o) => (fixed ? o : wrap(base + o)));
+            document.querySelector('#edit-pattern-a').value = hex(hues[0], 0.5, 0.16);
+            document.querySelector('#edit-pattern-b').value = hex(hues[1], 0.65, 0.42);
+            document.querySelector('#edit-pattern-c').value = hex(hues[2], 0.8, 0.68);
             document.querySelector('#edit-pattern-seed').value =
                 1 + Math.floor(Math.random() * 999);
             document.querySelector('input[name="bg"][value="pattern"]').checked = true;
@@ -1726,6 +1742,7 @@ class ElementBuiler {
             poster.pattern = document.querySelector('#edit-pattern').value;
             poster.patternA = document.querySelector('#edit-pattern-a').value;
             poster.patternB = document.querySelector('#edit-pattern-b').value;
+            poster.patternC = document.querySelector('#edit-pattern-c').value;
             poster.patternSeed = num('#edit-pattern-seed');
             poster.patternScale = num('#edit-pattern-scale');
         } else {
@@ -1840,6 +1857,7 @@ class ElementBuiler {
         document.querySelector('#edit-pattern').value = poster.pattern ?? 'gradient';
         document.querySelector('#edit-pattern-a').value = poster.patternA ?? '#1b2a4a';
         document.querySelector('#edit-pattern-b').value = poster.patternB ?? '#c2410c';
+        document.querySelector('#edit-pattern-c').value = poster.patternC ?? '#f5c451';
         document.querySelector('#edit-pattern-seed').value = poster.patternSeed ?? 1;
         document.querySelector('#edit-pattern-scale').value = poster.patternScale ?? 50;
         const mode = hasImage ? 'image' : poster.pattern ? 'pattern' : 'color';

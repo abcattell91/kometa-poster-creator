@@ -73,37 +73,54 @@ class PosterBuilder {
      * settings always reproduce the same image — unlike the random colours
      * elsewhere, these are safe to use in a bulk export.
      */
-    pattern(name, { colorA = '#1b2a4a', colorB = '#c2410c', seed = 1, scale = 50 } = {}) {
+    pattern(name, {
+        colorA = '#1b2a4a', colorB = '#c2410c', colorC = '#f5c451',
+        seed = 1, scale = 50
+    } = {}) {
         const a = color(colorA);
         const b = color(colorB);
+        const c = color(colorC);
         randomSeed(seed);
         noiseSeed(seed);
         push();
         noStroke();
 
+        // Three-stop ramp, so every pattern uses all three colours.
+        const ramp = (t) => {
+            const v = Math.max(0, Math.min(1, t));
+            return v < 0.5 ? lerpColor(a, b, v * 2) : lerpColor(b, c, (v - 0.5) * 2);
+        };
         // Density derived from `scale` so one slider drives every pattern.
-        const density = Math.max(2, Math.round(scale / 4));
+        const density = Math.max(3, Math.round(scale / 4));
+        const step = Math.max(14, scale);
+        const wash = () => { fill(a); rect(0, 0, width, height); };
 
         if (name === 'gradient') {
             for (let y = 0; y < height; y++) {
-                stroke(lerpColor(a, b, y / height));
+                stroke(ramp(y / height));
                 line(0, y, width, y);
             }
+        } else if (name === 'radial') {
+            fill(c); rect(0, 0, width, height);
+            for (let i = 240; i > 0; i--) {
+                fill(ramp(1 - i / 240));
+                circle(width / 2, height / 2, (i / 240) * height * 1.8);
+            }
         } else if (name === 'mesh') {
-            fill(a); rect(0, 0, width, height);
-            drawingContext.filter = `blur(${Math.max(20, scale)}px)`;
+            wash();
+            drawingContext.filter = `blur(${Math.max(30, scale)}px)`;
             for (let i = 0; i < density; i++) {
-                fill(lerpColor(a, b, random()));
+                fill(ramp(random()));
                 circle(random(width), random(height), random(width / 3, width));
             }
             drawingContext.filter = 'none';
         } else if (name === 'waves') {
-            fill(a); rect(0, 0, width, height);
+            wash();
             for (let i = 0; i < density; i++) {
-                fill(lerpColor(a, b, i / density));
+                fill(ramp(i / density));
                 beginShape();
                 vertex(0, height);
-                for (let x = 0; x <= width; x += 10) {
+                for (let x = 0; x <= width; x += 8) {
                     vertex(x, height * (i / density)
                         + Math.sin((x / width) * TWO_PI + i) * (scale / 2) + scale);
                 }
@@ -111,46 +128,129 @@ class PosterBuilder {
                 endShape(CLOSE);
             }
         } else if (name === 'rings') {
-            fill(b); rect(0, 0, width, height);
             for (let i = density; i > 0; i--) {
-                fill(lerpColor(a, b, i / density));
+                fill(ramp(i / density));
                 circle(width / 2, height / 2, (i / density) * height * 1.6);
             }
         } else if (name === 'grid') {
-            fill(a); rect(0, 0, width, height);
-            const step = Math.max(12, scale);
-            fill(b);
-            for (let x = step / 2; x < width; x += step) {
-                for (let y = step / 2; y < height; y += step) {
-                    circle(x, y, step * 0.28);
+            wash();
+            for (let x = step / 2; x < width + step; x += step) {
+                for (let y = step / 2; y < height + step; y += step) {
+                    fill(ramp(y / height));
+                    circle(x, y, step * 0.34);
                 }
             }
-        } else if (name === 'triangles') {
-            fill(a); rect(0, 0, width, height);
-            const step = Math.max(40, scale * 2);
-            for (let x = -step; x < width + step; x += step) {
-                for (let y = -step; y < height + step; y += step) {
-                    fill(lerpColor(a, b, random()));
-                    triangle(x, y, x + step, y, x, y + step);
-                    fill(lerpColor(a, b, random()));
-                    triangle(x + step, y, x + step, y + step, x, y + step);
-                }
-            }
-        } else if (name === 'noise') {
-            const step = 4;
-            const zoom = 0.002 * (scale / 25);
-            for (let x = 0; x < width; x += step) {
-                for (let y = 0; y < height; y += step) {
-                    fill(lerpColor(a, b, noise(x * zoom, y * zoom)));
+        } else if (name === 'checker') {
+            let row = 0;
+            for (let y = 0; y < height; y += step, row++) {
+                let col = 0;
+                for (let x = 0; x < width; x += step, col++) {
+                    fill((row + col) % 2 ? ramp(x / width) : a);
                     rect(x, y, step, step);
                 }
             }
+        } else if (name === 'stripes') {
+            wash();
+            push();
+            translate(width / 2, height / 2);
+            rotate(radians(-30));
+            let i = 0;
+            for (let x = -height; x < height; x += step, i++) {
+                fill(ramp(i / (height / step)));
+                rect(x, -height, step * 0.62, height * 2.4);
+            }
+            pop();
+        } else if (name === 'triangles') {
+            const s = Math.max(40, scale * 2);
+            for (let x = -s; x < width + s; x += s) {
+                for (let y = -s; y < height + s; y += s) {
+                    fill(ramp(random()));
+                    triangle(x, y, x + s, y, x, y + s);
+                    fill(ramp(random()));
+                    triangle(x + s, y, x + s, y + s, x, y + s);
+                }
+            }
+        } else if (name === 'noise') {
+            const px = 4;
+            const zoom = 0.002 * (scale / 25);
+            for (let x = 0; x < width; x += px) {
+                for (let y = 0; y < height; y += px) {
+                    fill(ramp(noise(x * zoom, y * zoom)));
+                    rect(x, y, px, px);
+                }
+            }
+        } else if (name === 'topo') {
+            // Band a noise field into contour steps.
+            const px = 3;
+            const zoom = 0.0025 * (scale / 25);
+            const levels = Math.max(4, Math.round(scale / 6));
+            for (let x = 0; x < width; x += px) {
+                for (let y = 0; y < height; y += px) {
+                    const band = Math.floor(noise(x * zoom, y * zoom) * levels) / levels;
+                    fill(ramp(band));
+                    rect(x, y, px, px);
+                }
+            }
         } else if (name === 'stars') {
-            fill(a); rect(0, 0, width, height);
-            for (let i = 0; i < density * 12; i++) {
-                const size = random(1, 3.2);
-                fill(lerpColor(a, b, random(0.4, 1)));
-                circle(random(width), random(height), size);
+            // Gradient sky first, then enough stars to actually read as a
+            // starfield — a sparse scatter of 1px dots vanishes once the
+            // preview is scaled down.
+            for (let y = 0; y < height; y++) {
+                stroke(lerpColor(a, color(0), 0.35 * (y / height)));
+                line(0, y, width, y);
+            }
+            noStroke();
+            for (let i = 0; i < 220 + density * 60; i++) {
+                const bright = random();
+                fill(ramp(0.5 + bright * 0.5));
+                circle(random(width), random(height), random(1.2, 2.6) * (0.6 + bright));
+            }
+            // A few brighter ones with a glow, for depth.
+            for (let i = 0; i < density; i++) {
+                const x = random(width);
+                const y = random(height);
+                drawingContext.shadowColor = c.toString();
+                drawingContext.shadowBlur = 14;
+                fill(c);
+                circle(x, y, random(3.5, 6));
+            }
+            drawingContext.shadowBlur = 0;
+            drawingContext.shadowColor = 'rgba(0,0,0,0)';
+        } else if (name === 'burst') {
+            wash();
+            push();
+            translate(width / 2, height / 2);
+            const rays = Math.max(8, density * 2);
+            for (let i = 0; i < rays; i++) {
+                fill(ramp(i / rays));
+                const from = (i / rays) * TWO_PI;
+                const to = ((i + 0.5) / rays) * TWO_PI;
+                const r = height * 1.2;
+                triangle(0, 0, Math.cos(from) * r, Math.sin(from) * r,
+                    Math.cos(to) * r, Math.sin(to) * r);
+            }
+            pop();
+        } else if (name === 'bokeh') {
+            for (let y = 0; y < height; y++) {
+                stroke(ramp(y / height));
+                line(0, y, width, y);
+            }
+            noStroke();
+            for (let i = 0; i < density * 3; i++) {
+                const shade = color(c.toString());
+                shade.setAlpha(random(20, 70));
+                fill(shade);
+                circle(random(width), random(height), random(scale, scale * 4));
+            }
+        } else if (name === 'confetti') {
+            wash();
+            for (let i = 0; i < density * 14; i++) {
+                push();
+                translate(random(width), random(height));
+                rotate(random(TWO_PI));
+                fill(ramp(random()));
+                rect(0, 0, random(6, scale / 3), random(3, 10), 2);
+                pop();
             }
         }
 

@@ -36,10 +36,11 @@ a page (see below).
 - **Backgrounds** — search [wallhaven.cc](https://wallhaven.cc), browse the
   ~16,000 images in
   [Kometa-Team/Default-Images](https://github.com/Kometa-Team/Default-Images),
-  upload your own, or generate one: eight seeded patterns (gradient, mesh
-  blobs, waves, rings, dot grid, low poly, clouds, starfield) with two colours,
-  a scale and a shuffle button. Seeded means the same settings always reproduce
-  the same image, so a bulk export stays consistent.
+  upload your own, or generate one: 15 seeded patterns across gradients,
+  geometric and organic, driven by three colours, a scale and a seed. Shuffle
+  picks a fresh palette using a colour harmony you choose — complementary,
+  analogous, triadic, monochrome, warm or cool. Seeded means the same settings
+  always reproduce the same image, so a bulk export stays consistent.
 - **Fonts** — the 13 Kometa defaults (Bebas Neue, Comfortaa, Inter), loaded at
   runtime. Nothing is bundled.
 - **Plex** — sign in to pull your real collection names as autocomplete, or

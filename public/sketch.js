@@ -522,6 +522,722 @@ function posterOverflows(poster) {
         text && PosterBuilder.overflows(cased(text), sizeAt(i), style));
 }
 
+/* ------------------------------------------------------------------ */
+/* Kometa Default-Images: fonts and backgrounds                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The Kometa TTFs, loaded on demand from jsDelivr (which sends CORS headers, so
+ * p5 can parse them). Cached per session; `ensure()` must be awaited before
+ * drawing or the poster silently falls back to the built-in font.
+ */
+const KometaFonts = {
+    CDN: 'https://cdn.jsdelivr.net/gh/Kometa-Team/Default-Images@master/',
+    cache: new Map(),
+    pending: new Map(),
+
+    isKometa(name) {
+        return typeof name === 'string' && /^(BebasNeue|Comfortaa|Inter)-/.test(name);
+    },
+
+    ensure(name) {
+        if (!this.isKometa(name) || this.cache.has(name)) return Promise.resolve();
+        // De-duplicate: a slider drag can request the same font many times
+        // before the first load resolves.
+        if (!this.pending.has(name)) {
+            this.pending.set(name, new Promise((resolve) => {
+                loadFont(`${this.CDN}${name}.ttf`,
+                    (loaded) => { this.cache.set(name, loaded); resolve(); },
+                    () => resolve());
+            }));
+        }
+        return this.pending.get(name);
+    },
+
+    get(name) {
+        return this.cache.get(name);
+    }
+};
+
+/** Browser for the ~16k Kometa default background images. */
+const Kometa = {
+    page: 1,
+    lastPage: 1,
+    busy: false,
+    count: 0,
+
+    status(message, show = true) {
+        const node = document.querySelector('#km-status');
+        node.hidden = !show;
+        node.textContent = message;
+    },
+
+    get loaded() {
+        return document.querySelector('#km-category').options.length > 1;
+    },
+
+    async loadCategories() {
+        if (this.loaded) return true;
+        try {
+            const response = await fetch('/api/kometa/categories');
+            const body = await response.json();
+            if (!response.ok) throw new Error(body.error ?? 'Could not list categories.');
+            const select = document.querySelector('#km-category');
+            for (const { name, count } of body) {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = `${name.replace(/_/g, ' ')} (${count})`;
+                select.appendChild(option);
+            }
+            this.status('', false);
+            return true;
+        } catch (err) {
+            // Recoverable: retried whenever the picker is next used, so a blip
+            // at startup doesn't disable it until the page is reloaded.
+            this.status(`${err.message} Click here to retry.`);
+            document.querySelector('#km-status').classList.add('retry');
+            return false;
+        }
+    },
+
+    async search(page = 1) {
+        if (this.busy) return;
+        if (page > 1 && page > this.lastPage) return;
+        this.busy = true;
+        this.page = page;
+        this.status(page === 1 ? 'Loading…' : 'Loading more…');
+
+        try {
+            const params = new URLSearchParams({
+                category: document.querySelector('#km-category').value,
+                q: document.querySelector('#km-query').value.trim(),
+                page
+            });
+            const response = await fetch(`/api/kometa/images?${params}`);
+            const body = await response.json();
+            if (!response.ok) throw new Error(body.error ?? 'Search failed.');
+
+            this.lastPage = body.lastPage;
+            if (page === 1) this.count = 0;
+            this.count += body.data.length;
+            this.render(body.data, page > 1);
+            this.status(body.total
+                ? `${this.count} of ${body.total.toLocaleString()} shown`
+                : 'Nothing matched.');
+        } catch (err) {
+            this.status(`${err.message} (is the Express server running?)`);
+            this.lastPage = 0;
+        } finally {
+            this.busy = false;
+            requestAnimationFrame(() => this.topUp());
+        }
+    },
+
+    topUp() {
+        const grid = document.querySelector('#km-results');
+        const sentinel = document.querySelector('#km-sentinel');
+        if (this.busy || this.page >= this.lastPage || !this.count) return;
+        if (sentinel.offsetTop <= grid.scrollTop + grid.clientHeight) this.search(this.page + 1);
+    },
+
+    observe() {
+        const grid = document.querySelector('#km-results');
+        new IntersectionObserver((entries) => {
+            if (entries.some((entry) => entry.isIntersecting)) this.search(this.page + 1);
+        }, { root: grid, rootMargin: '150px' }).observe(document.querySelector('#km-sentinel'));
+    },
+
+    render(items, append) {
+        const grid = document.querySelector('#km-results');
+        const sentinel = document.querySelector('#km-sentinel');
+        if (!append) grid.querySelectorAll('.wh-thumb').forEach((node) => node.remove());
+
+        for (const item of items) {
+            const thumb = document.createElement('button');
+            thumb.type = 'button';
+            thumb.className = 'wh-thumb';
+            thumb.style.backgroundImage = `url("${item.url}")`;
+            thumb.title = `${item.path} — click to use`;
+            thumb.innerHTML = `<span class="wh-res">${item.name}</span>`;
+            thumb.onclick = () => {
+                grid.querySelector('.wh-thumb[data-picked="true"]')?.removeAttribute('data-picked');
+                thumb.dataset.picked = 'true';
+                pendingImage = item.url;
+                pendingPlexThumb = null;
+                document.querySelector('input[name="bg"][value="image"]').checked = true;
+                document.querySelector('#clear-image').hidden = false;
+                ElementBuiler.defaultDim();
+                ElementBuiler.previewDraft();
+            };
+            grid.insertBefore(thumb, sentinel);
+        }
+    },
+
+    /** Re-fetch the category list if a startup failure left it empty. */
+    async retry() {
+        document.querySelector('#km-status').classList.remove('retry');
+        this.status('Retrying…');
+        if (await this.loadCategories()) this.search(1);
+    },
+
+    attach() {
+        const category = document.querySelector('#km-category');
+        const query = document.querySelector('#km-query');
+
+        category.onchange = () => this.search(1);
+        query.oninput = () => {
+            clearTimeout(this.debounce);
+            this.debounce = setTimeout(() => this.search(1), 250);
+        };
+        // Any attempt to use the picker retries a failed startup fetch.
+        category.onfocus = () => { if (!this.loaded) this.retry(); };
+        query.onfocus = () => { if (!this.loaded) this.retry(); };
+        document.querySelector('#km-status').onclick = () => {
+            if (!this.loaded) this.retry();
+        };
+
+        this.observe();
+        this.loadCategories();
+    }
+};
+
+/* ------------------------------------------------------------------ */
+/* plex                                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Talks to plex.tv and the user's own server directly from the browser — both
+ * send `access-control-allow-origin: *`. Every `X-Plex-*` value goes in the
+ * query string rather than a header, which keeps each request a CORS "simple
+ * request" and avoids preflight against the user's server entirely.
+ *
+ * Auth uses the PIN flow, so this never sees a password. The resulting token is
+ * kept in localStorage and sent only to plex.tv and the user's own server.
+ */
+const Plex = {
+    PRODUCT: 'Kometa Poster Creator',
+    // [{ title, thumb, key }] for the selected library.
+    collections: [],
+    // Library sections, and every collection on the server indexed by name.
+    sections: [],
+    index: null,
+    // Plex thumb path -> blob URL, resolved lazily and kept for the session.
+    thumbs: new Map(),
+
+    get clientId() {
+        let id = localStorage.getItem('kometa-plex-client');
+        if (!id) {
+            id = (crypto.randomUUID?.() ?? String(Math.random()).slice(2)) + '-kometa';
+            localStorage.setItem('kometa-plex-client', id);
+        }
+        return id;
+    },
+    get token() { return localStorage.getItem('kometa-plex-token') ?? ''; },
+    set token(value) {
+        if (value) localStorage.setItem('kometa-plex-token', value);
+        else localStorage.removeItem('kometa-plex-token');
+    },
+    get server() { return localStorage.getItem('kometa-plex-server') ?? ''; },
+    set server(value) {
+        if (value) localStorage.setItem('kometa-plex-server', value);
+        else localStorage.removeItem('kometa-plex-server');
+    },
+
+    status(message) {
+        document.querySelector('#plex-status').textContent = message;
+    },
+
+    params(extra = {}) {
+        return new URLSearchParams({
+            'X-Plex-Product': this.PRODUCT,
+            'X-Plex-Client-Identifier': this.clientId,
+            ...(this.token ? { 'X-Plex-Token': this.token } : {}),
+            ...extra
+        });
+    },
+
+    async get(url, timeout = 8000) {
+        const abort = new AbortController();
+        const timer = setTimeout(() => abort.abort(), timeout);
+        try {
+            const response = await fetch(url, {
+                headers: { Accept: 'application/json' },
+                signal: abort.signal
+            });
+            if (response.status === 401) throw new Error('Plex rejected the token — sign in again.');
+            if (!response.ok) throw new Error(`Plex returned ${response.status}.`);
+            return await response.json();
+        } finally {
+            clearTimeout(timer);
+        }
+    },
+
+    /** PIN flow: open plex.tv to authorise, then poll until the pin is claimed. */
+    async signIn() {
+        // Opened synchronously — a popup blocked after an await is the usual
+        // way this flow fails.
+        const win = window.open('', '_blank');
+        try {
+            this.status('Requesting a sign-in code…');
+            const pin = await (await fetch(
+                `https://plex.tv/api/v2/pins?strong=true&${this.params()}`,
+                { method: 'POST', headers: { Accept: 'application/json' } }
+            )).json();
+
+            const authParams = new URLSearchParams({
+                clientID: this.clientId,
+                code: pin.code,
+                'context[device][product]': this.PRODUCT
+            });
+            win.location = `https://app.plex.tv/auth#?${authParams}`;
+            this.status('Waiting for you to approve in the Plex tab…');
+
+            // Poll for up to three minutes.
+            for (let i = 0; i < 90; i++) {
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+                const check = await this.get(
+                    `https://plex.tv/api/v2/pins/${pin.id}?${this.params()}`);
+                if (check.authToken) {
+                    this.token = check.authToken;
+                    win.close();
+                    await this.loadServers();
+                    return;
+                }
+            }
+            throw new Error('Timed out waiting for approval.');
+        } catch (err) {
+            win?.close();
+            this.status(err.message);
+        }
+    },
+
+    signOut() {
+        this.token = '';
+        this.server = '';
+        this.collections = [];
+        this.syncDatalist();
+        this.render();
+        this.status('Signed out. The token has been removed from this browser.');
+    },
+
+    async loadServers() {
+        this.status('Finding your servers…');
+        const resources = await this.get(
+            `https://plex.tv/api/v2/resources?includeHttps=1&includeRelay=1&${this.params()}`);
+        const servers = resources.filter((r) => r.provides?.includes('server'));
+        if (!servers.length) throw new Error('No Plex servers on this account.');
+
+        const select = document.querySelector('#plex-server');
+        select.innerHTML = '';
+        for (const server of servers) {
+            // Prefer a direct connection; relay is slow but works from anywhere.
+            const connections = [...(server.connections ?? [])]
+                .sort((a, b) => (a.relay - b.relay) || (b.local - a.local));
+            if (!connections.length) continue;
+            const option = document.createElement('option');
+            option.value = JSON.stringify(connections.map((c) => c.uri));
+            option.textContent = server.name;
+            select.appendChild(option);
+        }
+        this.render();
+        await this.connect();
+    },
+
+    /** Try each candidate URI until one answers, then load its libraries. */
+    async connect() {
+        const select = document.querySelector('#plex-server');
+        const uris = JSON.parse(select.value || '[]');
+        this.status(`Connecting to ${select.selectedOptions[0]?.textContent ?? 'server'}…`);
+
+        for (const uri of uris) {
+            try {
+                await this.get(`${uri}/identity?${this.params()}`, 4000);
+                this.server = uri;
+                await this.loadLibraries();
+                return;
+            } catch {
+                // Try the next connection.
+            }
+        }
+        this.status('Could not reach that server from this browser.');
+    },
+
+    async loadLibraries() {
+        const body = await this.get(`${this.server}/library/sections?${this.params()}`);
+        const sections = body.MediaContainer?.Directory ?? [];
+        this.sections = sections;
+        const select = document.querySelector('#plex-library');
+        select.innerHTML = '';
+        for (const section of sections) {
+            const option = document.createElement('option');
+            option.value = section.key;
+            option.textContent = `${section.title} (${section.type})`;
+            select.appendChild(option);
+        }
+        this.render();
+        // Index every library up front so uploads can detect a name that exists
+        // in more than one of them.
+        await this.buildIndex();
+        await this.loadCollections();
+    },
+
+    async loadCollections() {
+        const key = document.querySelector('#plex-library').value;
+        if (!key) return;
+        const body = await this.get(
+            `${this.server}/library/sections/${key}/collections?${this.params()}`);
+        this.collections = (body.MediaContainer?.Metadata ?? [])
+            .map((m) => ({ title: m.title, thumb: m.thumb, key: m.ratingKey }));
+        this.syncDatalist();
+        // Without this the Import button stays hidden, which is the only
+        // visible entry point to the collections just fetched.
+        this.render();
+        this.status(this.collections.length
+            ? `${this.collections.length} collections found — click “Import collections” to make a `
+                + `poster for each, or pick one by name when editing any poster.`
+            : 'That library has no collections.');
+    },
+
+    /**
+     * Resolve a Plex `thumb` path to a usable image URL.
+     *
+     * Fetched as a blob rather than pointed at directly: a cross-origin image
+     * drawn onto the canvas taints it, and a tainted canvas makes toDataURL()
+     * throw — which would break every export, not just this poster. A blob URL
+     * is same-origin, so the canvas stays exportable.
+     */
+    async thumbUrl(path) {
+        if (this.thumbs.has(path)) return this.thumbs.get(path);
+        const response = await fetch(`${this.server}${path}?${this.params()}`);
+        if (!response.ok) throw new Error(`thumb ${response.status}`);
+        const url = URL.createObjectURL(await response.blob());
+        this.thumbs.set(path, url);
+        return url;
+    },
+
+    /**
+     * Index every library's collections by name, so a name match can tell
+     * whether it is unique across the whole server. "Action" commonly exists in
+     * Movies, TV *and* Anime; resolving against one library alone would upload
+     * to whichever happened to be selected.
+     */
+    async buildIndex() {
+        this.index = new Map();
+        const results = await Promise.all(this.sections.map(async (section) => {
+            try {
+                const body = await this.get(
+                    `${this.server}/library/sections/${section.key}/collections?${this.params()}`);
+                return (body.MediaContainer?.Metadata ?? [])
+                    .map((m) => ({ key: m.ratingKey, title: m.title, library: section.title }));
+            } catch {
+                return [];
+            }
+        }));
+        for (const entry of results.flat()) {
+            const name = entry.title.toLowerCase();
+            if (!this.index.has(name)) this.index.set(name, []);
+            this.index.get(name).push(entry);
+        }
+    },
+
+    /**
+     * Work out which Plex collection a poster targets.
+     *
+     * An imported poster carries a ratingKey, which is unique server-wide and
+     * therefore unambiguous. Anything else is matched by name — and a name that
+     * exists in more than one library is reported as ambiguous rather than
+     * guessed at.
+     */
+    resolve(poster) {
+        if (poster.plexKey) {
+            const known = [...(this.index?.values() ?? [])].flat()
+                .find((entry) => entry.key === poster.plexKey);
+            return { key: poster.plexKey, library: known?.library ?? 'Plex', exact: true };
+        }
+        const matches = this.index?.get(collectionFolder(poster.name).toLowerCase()) ?? [];
+        if (matches.length === 1) return { ...matches[0], exact: false };
+        if (matches.length > 1) {
+            return { ambiguous: true, libraries: matches.map((m) => m.library) };
+        }
+        return null;
+    },
+
+    /**
+     * Upload a PNG and make it the collection's selected poster.
+     *
+     * Posted as a bare ArrayBuffer with no Content-Type: an `image/png` header
+     * is not CORS-safelisted and would force a preflight against the user's own
+     * server. Without it this stays a simple request. Plex sniffs the image
+     * anyway, and keeps the previous poster in the collection's poster list, so
+     * this is reversible from Plex itself.
+     */
+    async uploadPoster(ratingKey, buffer) {
+        const response = await fetch(
+            `${this.server}/library/metadata/${ratingKey}/posters?${this.params()}`,
+            { method: 'POST', body: buffer });
+        if (!response.ok) {
+            throw new Error(response.status === 401
+                ? 'Plex rejected the token — sign in again.'
+                : `Plex returned ${response.status}.`);
+        }
+        // The cached thumb is now stale.
+        for (const [path, url] of this.thumbs) {
+            if (path.includes(`/${ratingKey}/`)) {
+                URL.revokeObjectURL(url);
+                this.thumbs.delete(path);
+            }
+        }
+    },
+
+    /**
+     * Lock the poster field so Plex's own agents won't replace it on a metadata
+     * refresh. Unlike the upload this is a PUT, which is not a CORS-simple
+     * method and does need a preflight — so it can fail where the upload
+     * succeeded, and is reported separately.
+     */
+    async lockPoster(ratingKey) {
+        const response = await fetch(
+            `${this.server}/library/metadata/${ratingKey}?${this.params({ 'thumb.locked': '1' })}`,
+            { method: 'PUT' });
+        if (!response.ok) throw new Error(`lock returned ${response.status}`);
+    },
+
+    /** Feeds the native autocomplete on the poster name field. */
+    syncDatalist() {
+        const list = document.querySelector('#plex-collections');
+        list.innerHTML = '';
+        for (const { title } of this.collections) {
+            const option = document.createElement('option');
+            option.value = title;
+            list.appendChild(option);
+        }
+    },
+
+    /** Build a custom collection with one poster per Plex collection. */
+    importCollections() {
+        if (!this.collections.length) return;
+        const library = document.querySelector('#plex-library').selectedOptions[0]?.textContent ?? 'Plex';
+        const name = Store.uniqueName(`Plex ${library.replace(/\s*\(.*\)$/, '')}`);
+        // Imported as the collection's *current* Plex artwork: no text overlay
+        // and no white frame, so what you see is what Plex has today. Only the
+        // thumb path is stored — the bytes are fetched on demand, since 86
+        // inlined images would blow the localStorage budget many times over.
+        customCollections[name] = this.collections.map(({ title, thumb, key }) => ({
+            type: 'collection',
+            name: title,
+            // Marks the name as owned by Plex, so the editor locks it.
+            plex: true,
+            plexKey: key,
+            lines: [],
+            plexThumb: thumb,
+            border: false,
+            color: '#333333'
+        }));
+        if (!Store.save()) return;
+        ElementBuiler.renderPills();
+        ElementBuiler.select(name, customCollections[name], true);
+        this.status(`Imported ${this.collections.length} collections as "${name}".`);
+    },
+
+    render() {
+        const connected = Boolean(this.token);
+        document.querySelector('#plex-connect').hidden = connected;
+        document.querySelector('#plex-signout').hidden = !connected;
+        document.querySelector('#plex-server').hidden = !connected;
+        document.querySelector('#plex-library').hidden = !connected;
+        document.querySelector('#plex-import').hidden = !this.collections.length;
+        // Signing in or changing library changes what can be uploaded.
+        UI.selectionCount();
+    },
+
+    attach() {
+        document.querySelector('#plex-connect').onclick = () => this.signIn();
+        document.querySelector('#plex-signout').onclick = () => this.signOut();
+        document.querySelector('#plex-server').onchange = () =>
+            this.connect().catch((err) => this.status(err.message));
+        document.querySelector('#plex-library').onchange = () =>
+            this.loadCollections().catch((err) => this.status(err.message));
+        document.querySelector('#plex-import').onclick = () => this.importCollections();
+
+        this.render();
+        if (this.token) {
+            this.status('Reconnecting…');
+            this.loadServers().catch((err) => this.status(err.message));
+        }
+    }
+};
+
+/* ------------------------------------------------------------------ */
+/* wallhaven background picker                                         */
+/* ------------------------------------------------------------------ */
+
+const Wallhaven = {
+    query: '',
+    page: 1,
+    lastPage: 1,
+    total: 0,
+    seed: null,
+    busy: false,
+    seen: new Set(),
+
+    status(message, show = true) {
+        const node = document.querySelector('#wh-status');
+        node.hidden = !show;
+        node.textContent = message;
+    },
+
+    /**
+     * The user's wallhaven API key, kept in this browser only. It is sent as a
+     * request header to the local proxy, which forwards it to wallhaven; it is
+     * never written into a poster or a URL.
+     */
+    apiKey() {
+        return localStorage.getItem(KEY_STORAGE) ?? '';
+    },
+
+    setApiKey(value) {
+        const key = value.trim();
+        if (key) localStorage.setItem(KEY_STORAGE, key);
+        else localStorage.removeItem(KEY_STORAGE);
+        document.querySelector('#wh-key-clear').hidden = !key;
+    },
+
+    restoreApiKey() {
+        const key = this.apiKey();
+        document.querySelector('#wh-apikey').value = key;
+        document.querySelector('#wh-key-clear').hidden = !key;
+    },
+
+    /** Read the filter controls into query parameters. */
+    filters() {
+        const flags = (attr) => [0, 1, 2]
+            .map((i) => document.querySelector(`#wh-filters input[data-${attr}="${i}"]`).checked ? '1' : '0')
+            .join('');
+        return {
+            categories: flags('cat'),
+            purity: flags('pur'),
+            sorting: document.querySelector('#wh-sorting').value,
+            ratios: document.querySelector('#wh-ratios').value,
+            atleast: document.querySelector('#wh-atleast').value
+        };
+    },
+
+    async search(page = 1) {
+        if (this.busy) return;
+        // Nothing left to page through.
+        if (page > 1 && page > this.lastPage) return;
+
+        this.busy = true;
+        this.page = page;
+        this.query = document.querySelector('#wh-query').value.trim();
+        if (page === 1) {
+            this.seed = null;
+            this.seen.clear();
+        }
+        this.status(page === 1 ? 'Searching…' : 'Loading more…');
+
+        try {
+            const params = new URLSearchParams({ q: this.query, page, ...this.filters() });
+            if (this.seed) params.set('seed', this.seed);
+
+            const key = this.apiKey();
+            const response = await fetch(`/api/wallhaven?${params}`,
+                key ? { headers: { 'X-Wallhaven-Key': key } } : undefined);
+            const body = await response.json();
+            if (!response.ok) throw new Error(body.error ?? 'Search failed.');
+
+            this.lastPage = body.meta?.last_page ?? 1;
+            this.total = body.meta?.total ?? 0;
+            // Keeps `random` sorting stable while paging.
+            this.seed = this.seed ?? body.meta?.seed ?? null;
+
+            const fresh = body.data.filter((item) => !this.seen.has(item.id));
+            fresh.forEach((item) => this.seen.add(item.id));
+            this.render(fresh, page > 1);
+
+            const shown = this.seen.size;
+            this.status([
+                this.total
+                    ? `${shown} of ${this.total.toLocaleString()} shown`
+                    : 'No wallpapers matched these filters.',
+                body.warning
+            ].filter(Boolean).join(' · '));
+        } catch (err) {
+            // The proxy lives in index.js, so this also fires under a plain
+            // static server (e.g. python -m http.server).
+            this.status(`${err.message} (is the Express server running?)`);
+            this.lastPage = 0;
+        } finally {
+            this.busy = false;
+            // The sentinel may still be on screen if the new rows didn't fill
+            // the scroller, so re-check rather than wait for a scroll event.
+            requestAnimationFrame(() => this.topUp());
+        }
+    },
+
+    /** Load another page if the sentinel is still visible. */
+    topUp() {
+        const grid = document.querySelector('#wh-results');
+        const sentinel = document.querySelector('#wh-sentinel');
+        if (this.busy || this.page >= this.lastPage || !this.seen.size) return;
+        if (sentinel.offsetTop <= grid.scrollTop + grid.clientHeight) {
+            this.search(this.page + 1);
+        }
+    },
+
+    observe() {
+        const grid = document.querySelector('#wh-results');
+        new IntersectionObserver((entries) => {
+            if (entries.some((entry) => entry.isIntersecting)) {
+                this.search(this.page + 1);
+            }
+        }, { root: grid, rootMargin: '150px' }).observe(document.querySelector('#wh-sentinel'));
+    },
+
+    render(items, append) {
+        const grid = document.querySelector('#wh-results');
+        const sentinel = document.querySelector('#wh-sentinel');
+        if (!append) {
+            grid.querySelectorAll('.wh-thumb').forEach((node) => node.remove());
+        }
+
+        for (const item of items) {
+            const thumb = document.createElement('button');
+            thumb.type = 'button';
+            thumb.className = 'wh-thumb';
+            thumb.style.backgroundImage = `url("${item.thumb}")`;
+            thumb.title = `${item.resolution} · ${item.purity} — click to use`;
+            thumb.innerHTML = `<span class="wh-res">${item.resolution}</span>` +
+                (item.purity && item.purity !== 'sfw'
+                    ? `<span class="wh-purity" data-purity="${item.purity}">${item.purity}</span>`
+                    : '');
+            thumb.onclick = () => {
+                grid.querySelector('.wh-thumb[data-picked="true"]')?.removeAttribute('data-picked');
+                thumb.dataset.picked = 'true';
+                // Store the CDN URL, not the bytes: it keeps localStorage tiny,
+                // and the CDN allows cross-origin reads so the canvas stays
+                // exportable.
+                pendingImage = item.full;
+                document.querySelector('input[name="bg"][value="image"]').checked = true;
+                document.querySelector('#clear-image').hidden = false;
+                ElementBuiler.defaultDim();
+                this.status(`Loading ${item.resolution} image…`);
+                ElementBuiler.previewDraft().then(() => this.status('', false));
+            };
+            grid.insertBefore(thumb, sentinel);
+        }
+    },
+
+    clear() {
+        document.querySelector('#wh-results')
+            .querySelectorAll('.wh-thumb').forEach((node) => node.remove());
+        this.seen.clear();
+        this.page = 1;
+        this.lastPage = 1;
+        this.status('', false);
+    }
+};
+
 const UI = {
     runStart(total) {
         document.querySelector('#progress').hidden = false;

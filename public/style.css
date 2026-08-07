@@ -616,6 +616,44 @@ canvas {
   cursor: not-allowed;
 }
 
+.lines-editor {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.line-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px 30px 30px auto auto auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.line-row .line-size {
+  width: 100%;
+  accent-color: var(--ring);
+  cursor: pointer;
+}
+
+.line-row .line-size-out {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.line-row .btn {
+  padding: 3px 6px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.add-line {
+  justify-self: start;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
 .pattern-colours {
   display: inline-flex;
   align-items: center;

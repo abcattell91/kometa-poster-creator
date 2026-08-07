@@ -492,16 +492,35 @@ class PosterBuilder {
         const size = (str, requested) =>
             (s.autoFit ? PosterBuilder.fitSize(cased(str), requested, s) : requested);
 
-        // Work out both lines up front: the plate needs their extents.
+        // Work out every line up front: the plate needs their extents.
         const slots = [];
-        if (lines.length === 2) {
-            // lines[1] normally sits above lines[0]; `swap` exchanges the slots.
+        if (Array.isArray(s.lineSizes) && s.lineSizes.length) {
+            // Multi-line: `lines` reads top to bottom, one size per line, and
+            // the block is centred vertically.
+            const sizes = lines.map((str, i) =>
+                size(str, s.lineSizes[i] ?? s.sizeBig));
+            const total = sizes.reduce((sum, v) => sum + v, 0) + s.gap * (lines.length - 1);
+            let cursor = -total / 2;
+            for (const [i, str] of lines.entries()) {
+                // 0.78 em puts the baseline under the cap line.
+                slots.push({
+                    str: cased(str), size: sizes[i], y: cursor + sizes[i] * 0.78,
+                    color: s.lineColors?.[i] || s.textColor
+                });
+                cursor += sizes[i] + s.gap;
+            }
+        } else if (lines.length === 2) {
+            // Legacy two-line: lines[1] sits above lines[0], `swap` exchanges
+            // them. Kept exactly so untouched posters.js entries don't move.
             const lower = s.sizeBig / 2 + s.gap / 2;
             const upper = -s.sizeBig / 2 - s.gap / 2;
-            slots.push({ str: cased(lines[0]), size: size(lines[0], s.sizeBig), y: s.swap ? upper : lower, big: true });
-            slots.push({ str: cased(lines[1]), size: size(lines[1], s.sizeSmall), y: s.swap ? lower : upper, big: false });
+            slots.push({ str: cased(lines[0]), size: size(lines[0], s.sizeBig), y: s.swap ? upper : lower, color: s.textColor });
+            slots.push({
+                str: cased(lines[1]), size: size(lines[1], s.sizeSmall), y: s.swap ? lower : upper,
+                color: s.smallColorLink ? s.textColor : s.smallColor
+            });
         } else if (lines.length === 1) {
-            slots.push({ str: cased(lines[0]), size: size(lines[0], s.sizeBig), y: s.sizeBig / 3, big: true });
+            slots.push({ str: cased(lines[0]), size: size(lines[0], s.sizeBig), y: s.sizeBig / 3, color: s.textColor });
         }
 
         if (s.plate !== 'none' && slots.some((slot) => slot.str)) {
@@ -520,7 +539,7 @@ class PosterBuilder {
         }
 
         for (const slot of slots) {
-            const paint = color(slot.big || s.smallColorLink ? s.textColor : s.smallColor);
+            const paint = color(slot.color);
             paint.setAlpha(alpha * 255);
             fill(paint);
             this.drawLine(slot.str, slot.size, slot.y, s);

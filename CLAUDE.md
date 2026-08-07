@@ -83,7 +83,16 @@ stays accurate.
 Defaults are declared in three places that must agree: `TEXT_DEFAULTS`,
 `TEXT_CONTROLS` in `sketch.js`, and the `value=` attributes in `index.html`.
 
-**`lines` renders inverted.** In `PosterBuilder.text()`, `lines[1]` draws small
+**Two text formats coexist.** A poster with a `lineSizes` array is multi-line:
+`lines` reads **top to bottom**, one size per line in `lineSizes`, optional
+per-line colours in `lineColors`, and the block is centred vertically. Without
+`lineSizes` the legacy path below applies, kept byte-identical so untouched
+`posters.js` entries do not move. The editor always writes the new format, so
+saving a legacy poster converts it — and because the two layouts derive baselines
+differently, a converted two-line poster can shift a few pixels vertically. Text Y
+compensates.
+
+**`lines` renders inverted (legacy format only).** In `PosterBuilder.text()`, `lines[1]` draws small
 (40px) *above* `lines[0]` large (72px). So `["2024 Summer", "season"]` reads as
 "SEASON" over "2024 SUMMER". Text is uppercased at draw time.
 

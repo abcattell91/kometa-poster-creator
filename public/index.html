@@ -48,14 +48,11 @@
           </div>
 
           <div class="editor-grid">
-            <label class="field">
-              <span class="field-label">Big text</span>
-              <input id="edit-line0" type="text" class="input" placeholder="2024 SUMMER" />
-            </label>
-            <label class="field">
-              <span class="field-label">Small text <span class="hint-inline">above it</span></span>
-              <input id="edit-line1" type="text" class="input" placeholder="season" />
-            </label>
+            <div class="field span-2">
+              <span class="field-label">Text lines <span class="hint-inline">top to bottom</span></span>
+              <div id="lines-editor" class="lines-editor"></div>
+              <button id="add-line" type="button" class="btn add-line">+ Add line</button>
+            </div>
             <label class="field span-2">
               <span class="field-label">Plex collection name
                 <span class="hint-inline">must match Plex exactly</span></span>
@@ -310,14 +307,9 @@
                 </select>
               </label>
               <label class="slider">
-                <span class="field-label">Big size</span>
+                <span class="field-label">New line size</span>
                 <input id="edit-size-big" type="range" min="20" max="160" value="72" />
                 <output id="out-size-big">72</output>
-              </label>
-              <label class="slider">
-                <span class="field-label">Small size</span>
-                <input id="edit-size-small" type="range" min="10" max="100" value="40" />
-                <output id="out-size-small">40</output>
               </label>
               <div class="slider slider-pair">
                 <span class="field-label">Auto-fit</span>
@@ -344,11 +336,6 @@
                 <input id="edit-text-y" type="range" min="-425" max="425" value="0" />
                 <output id="out-text-y">0</output>
               </label>
-              <div class="slider slider-pair">
-                <span class="field-label">Order</span>
-                <label class="checkbox"><input id="edit-swap" type="checkbox" /> <span
-                    class="hint-inline">big text on top</span></label>
-              </div>
               <label class="slider">
                 <span class="field-label">Align</span>
                 <select id="edit-align" class="input">
@@ -367,12 +354,6 @@
                 <input id="edit-textcolor" type="color" class="color-input" value="#ffffff" />
                 <label class="checkbox"><input id="edit-upper" type="checkbox" checked /> <span
                     class="hint-inline">UPPERCASE</span></label>
-              </div>
-              <div class="slider slider-pair">
-                <span class="field-label">Small hue</span>
-                <input id="edit-smallcolor" type="color" class="color-input" value="#ffffff" />
-                <label class="checkbox"><input id="edit-smalllink" type="checkbox" checked /> <span
-                    class="hint-inline">match big text</span></label>
               </div>
               <label class="slider">
                 <span class="field-label">Opacity</span>

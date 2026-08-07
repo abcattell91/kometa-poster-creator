@@ -30,7 +30,8 @@ a page (see below).
 - **Collections** — ships with the built-in sets (genres, decades, charts,
   resolutions, anime seasons 2000–2050…), and lets you create your own. Every
   collection is editable, built-ins included.
-- **Editing** — per-poster text, colour or image background, crop/zoom/pan,
+- **Editing** — as many lines of text as you like, each with its own size and
+  colour, reorderable; colour or image background, crop/zoom/pan,
   darkening, and full text styling: font, sizes, letter spacing, colour,
   outline, drop shadow, bloom and line order. Everything previews live.
 - **Backgrounds** — search [wallhaven.cc](https://wallhaven.cc), browse the

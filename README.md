@@ -7,6 +7,9 @@ whole set as a zip laid out the way Kometa expects.
 A personal fork of [ricoloic/Kometa-PMM-Poster-Creator](https://github.com/ricoloic/Kometa-PMM-Poster-Creator),
 substantially rebuilt.
 
+![The editor: collections across the top, live poster preview on the left, and the
+item list with per-poster checkboxes on the right](docs/screenshot-editor.png)
+
 ## Running it
 
 Requires Node 18 or newer (the server uses the built-in `fetch`).
@@ -38,6 +41,22 @@ a page (see below).
   Comfortaa, Inter).
 - **Plex** — sign in to pull your real collection names as autocomplete, or
   import a whole library's collections along with their current artwork.
+
+### Backgrounds
+
+Search wallhaven or browse the Kometa default images without leaving the editor.
+Everything previews on the canvas the moment you click it.
+
+![The background picker showing a wallhaven search with filters for category,
+purity, sort order and aspect ratio, above a grid of results](docs/screenshot-backgrounds.png)
+
+### Text
+
+Font, sizes, spacing, colour, outline, shadow, bloom, position and line order,
+all previewing live.
+
+![The Advanced Font Editing panel, with sliders for size, spacing, outline,
+shadow and bloom beside the live poster](docs/screenshot-font-editing.png)
 
 ## Output
 

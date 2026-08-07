@@ -6,23 +6,28 @@ for Kometa collections in Plex.
 ## What it is
 
 A p5.js sketch served as static files. `index.js` is an Express static server on
-port 3001 — all rendering happens client-side in the browser canvas. Its one
-non-static route is `/api/wallhaven`, a search proxy (see below).
+port 3001 — all rendering happens client-side in the browser canvas. Its
+non-static routes are `/api/wallhaven` and `/api/kometa/*`, both proxies for
+APIs the browser cannot reach directly (see below). Plex is contacted straight
+from the browser and never touches the server.
 
 - `public/posters.js` — data. Arrays of poster definitions, exported via the
   `POSTERS` object at the bottom, which drives the collection buttons in the UI.
-- `public/poster-builder.js` — `PosterBuilder` class. Draws background
-  (image via `url`, or flat `color`), gradient overlay, white border, text.
-- `public/sketch.js` — p5 lifecycle, UI wiring, and the bulk export loop
-  (`createPoster`), which recurses through the active array and zips the PNGs.
+- `public/poster-builder.js` — `PosterBuilder` class. Draws the background
+  (`url` image, flat `color`, or a generated `pattern`), the dim wash, the text
+  and its plate, and the white border.
+- `public/sketch.js` — p5 lifecycle, all UI wiring, and the loops:
+  `drawPoster(poster)` renders one, `runExport(list, name)` zips a batch,
+  `runUpload(list)` pushes a batch to Plex. Also holds the Store/Undo/Backup,
+  Plex, Wallhaven, Kometa and KometaFonts modules.
 - `public/index.html`, `public/style.css` — markup and styling.
 - The default font is Bebas Neue, fetched from jsDelivr in `preload()`. Nothing
   is bundled: the original FF Good Condensed is a commercial face and could not
   be redistributed once this repo went public. Falls back to `sans-serif` if the
   CDN is unreachable.
 
-Run with `node index.js`. The `python3 -m http.server` fallback still serves the
-app but the wallhaven picker won't work — that needs the Express route.
+Run with `npm start` (or `node index.js`). A plain static server still serves
+the app, but the wallhaven and Kometa pickers need the Express routes.
 
 **Wallhaven background search.** `/api/wallhaven` proxies wallhaven's search API
 because that API sends no CORS headers. The image CDN *does* send
@@ -66,9 +71,11 @@ suffix only appears at export.
 **Text styling is per-poster and optional.** `PosterBuilder.text(lines, style)`
 merges `style` over `TEXT_DEFAULTS`, whose values are the original hard-coded
 look (72/40, white, uppercase, no effects) — so `posters.js` entries render
-unchanged. Fields: `font` (`poster`/`sans`/`serif`/`mono`), `sizeBig`,
-`sizeSmall`, `textColor`, `uppercase`, `tracking`, `gap`, `strokeWidth`,
-`strokeColor`, `shadowBlur`, `shadowY`, `shadowOpacity`, `bloom`. The whole
+unchanged. Fields: `font` (`poster`/`sans`/`serif`/`mono`/a Kometa TTF name),
+`sizeBig`, `sizeSmall`, `textColor`, `uppercase`, `tracking`, `gap`, `autoFit`,
+`align`, `rotate`, `opacity`, `textX`, `textY`, `swap`, `strokeWidth`,
+`strokeColor`, `shadowBlur`, `shadowY`, `shadowOpacity`, `bloom`, and the plate
+(`plate`, `plateColor`, `plateOpacity`, `platePad`, `plateRadius`). The whole
 poster object is passed as the style, same as with the image adjustments.
 
 Shadow and bloom come from `drawingContext.shadow*` — p5 renders loaded fonts as
@@ -96,10 +103,11 @@ compensates.
 (40px) *above* `lines[0]` large (72px). So `["2024 Summer", "season"]` reads as
 "SEASON" over "2024 SUMMER". Text is uppercased at draw time.
 
-**No text wrapping or auto-fit.** `text()` is a bare p5 call at a fixed 72px on
-a 600x900 canvas with 25px borders. Long strings run off the edge silently — the
-custom-poster editor measures with `textWidth` and warns, but bulk arrays in
-`posters.js` are unchecked, so eyeball the widest entry before an export.
+**Overflow is handled two ways.** There is still no wrapping: a long line runs
+off the 600x900 canvas (25px borders, so 550px usable). `posterOverflows()`
+badges offending rows in the item list and counts them in the toolbar, and the
+per-poster `autoFit` flag shrinks the offending line at draw time via
+`PosterBuilder.fitSize()`.
 
 **Backgrounds are cover-fitted.** `PosterBuilder.url()` scales by
 `max(600/w, 900/h)` and crops the overhang, so any source resolution works. The
@@ -273,3 +281,61 @@ Pills mark their state: `✎` for a custom collection, `•` for an edited built
   needs rebuilding despite the repo being authored on macOS.
 - The `type` field on poster entries is cosmetic — `PosterBuilder` stores it but
   never uses it. It only labels the entry in the UI list.
+
+## Testing without a browser
+
+There is no test suite. Two techniques have earned their keep:
+
+**Run the real page in jsdom.** This is the only check that catches a broken
+`setup()` — syntax checks and id-existence greps do not, because they never
+execute it. It found a scripted edit that had silently deleted 716 lines
+(`KometaFonts`, `Kometa`, `Plex`, `Wallhaven`), which left the preview blank and
+Add poster dead while every other check passed.
+
+Install jsdom **outside the repo** — `node_modules` is committed here, so
+installing into it dirties the working tree:
+
+```bash
+mkdir -p /tmp/jsdomenv && cd /tmp/jsdomenv && npm install jsdom@22
+```
+
+jsdom 23+ pulls an ESM-only dependency that breaks under `require` on Node 20.
+Load it from an `.mjs` harness via `createRequire('/tmp/jsdomenv/node_modules/jsdom')`,
+stub the p5 globals plus `IntersectionObserver`, `CSS.escape` and `JSZip`,
+construct the JSDOM with `url: 'http://localhost:3001/'` (localStorage refuses
+opaque origins), then `window.eval()` **all three scripts concatenated into one
+string** — separate `eval` calls do not share `const` bindings. Then drive
+`setup()`, `select()`, `loadForm()`, `draftPoster()` and `savePoster()`.
+
+**Run `PosterBuilder` in a `vm` context** with recording stubs for `fill`,
+`rect`, `text` etc. Comparing the emitted draw calls is how the legacy text
+layout was proven byte-identical after the multi-line rewrite, and how patterns
+were checked to respond to seed and scale and to stay deterministic.
+
+Watch for stubs that lie: a `noise()` stub that added an integer to a value
+taken mod 1 reported two patterns as ignoring the seed when they did not.
+
+## Where things stand
+
+Everything below is built, pushed, and working as of the last session. The repo
+is public at `abcattell91/kometa-poster-creator`.
+
+Unverified in a real browser, and worth exercising first if touched:
+
+- **Upload to Plex** writes to the user's server, so it has never been run
+  end to end from here. Poster locking is a `PUT`, which unlike the upload needs
+  a CORS preflight the server may not answer.
+- **Backup → clear site data → restore**, the scenario backup exists for.
+
+Ideas raised and deliberately not built:
+
+- **Puter.js AI image generation.** Declined: it needs every user to hold a
+  Puter account, and loading a third-party script onto the same origin as the
+  Plex token widens who can read that token. The procedural patterns cover the
+  same ground without either problem.
+- **Layering a transparent overlay over a base image.** Came up when stacking
+  was happening accidentally through an uncleared canvas. Worth building
+  deliberately — Kometa's `separators/` art is designed for it — but it needs
+  its own layer with position and opacity, not a drawing-order side effect.
+- **Rounding the white poster frame.** Only the text plate rounds today; the
+  frame is drawn by `side()` and rounding it would leave square PNG corners.

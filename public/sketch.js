@@ -265,17 +265,19 @@ async function drawPoster(poster) {
     // A Plex-imported poster carries a thumb path instead of a url; resolve it
     // to a blob URL, falling back to the flat colour if the server is
     // unreachable or refuses the request.
-    let background = poster.url;
-    if (!background && poster.plexThumb) {
+    // Not named `background`: that would shadow p5's global background() for
+    // the whole function scope.
+    let imageSource = poster.url;
+    if (!imageSource && poster.plexThumb) {
         try {
-            background = await Plex.thumbUrl(poster.plexThumb);
+            imageSource = await Plex.thumbUrl(poster.plexThumb);
         } catch {
-            background = null;
+            imageSource = null;
         }
     }
 
-    if (background) {
-        await builder.url(background, poster);
+    if (imageSource) {
+        await builder.url(imageSource, poster);
     } else if (poster.pattern) {
         builder.pattern(poster.pattern, {
             colorA: poster.patternA,
@@ -1792,6 +1794,11 @@ class ElementBuiler {
                 // should still show it. Empty lines render as nothing.
                 await drawPoster(poster);
             } while (previewDirty);
+        } catch (err) {
+            // A throw here used to leave the canvas blank with no explanation.
+            console.error('Preview failed:', err);
+            UI.caption(`Preview failed: ${err.message}`);
+            return;
         } finally {
             previewing = false;
         }

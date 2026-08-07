@@ -30,11 +30,12 @@ class PosterBuilder {
                 w = width;
                 h = height;
             } else {
-                const scale = fit === 'contain'
+                // Not `scale`: that shadows p5's scale().
+                const factor = fit === 'contain'
                     ? Math.min(width / img.width, height / img.height)
                     : Math.max(width / img.width, height / img.height);
-                w = img.width * scale;
-                h = img.height * scale;
+                w = img.width * factor;
+                h = img.height * factor;
             }
             image(img, offsetX, offsetY, w * zoom, h * zoom);
         }
@@ -391,9 +392,10 @@ class PosterBuilder {
 
         const alpha = Math.max(0, Math.min(100, s.opacity)) / 100;
         if (s.strokeWidth > 0) {
-            const line = color(s.strokeColor);
-            line.setAlpha(alpha * 255);
-            stroke(line);
+            // Not `line`: that shadows p5's line().
+            const outline = color(s.strokeColor);
+            outline.setAlpha(alpha * 255);
+            stroke(outline);
             strokeWeight(s.strokeWidth);
         } else {
             noStroke();

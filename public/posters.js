@@ -340,16 +340,6 @@ const ANIME = {
         },
         {
             "type": "genre",
-            "name": "BoysLove",
-            "lines": [
-                "Boys Love",
-                "genre"
-            ],
-            "url": "assets/Anime/Genre/Boys Love.png",
-            "overlay": true
-        },
-        {
-            "type": "genre",
             "name": "Cars",
             "lines": [
                 "Cars",
@@ -410,32 +400,12 @@ const ANIME = {
         },
         {
             "type": "genre",
-            "name": "GirlsLove",
-            "lines": [
-                "Girls Love",
-                "genre"
-            ],
-            "url": "assets/Anime/Genre/Girls Love.png",
-            "overlay": true
-        },
-        {
-            "type": "genre",
             "name": "Gourmet",
             "lines": [
                 "Gourmet",
                 "genre"
             ],
             "url": "assets/Anime/Genre/Gourmet.png",
-            "overlay": true
-        },
-        {
-            "type": "genre",
-            "name": "Harem",
-            "lines": [
-                "Harem",
-                "genre"
-            ],
-            "url": "assets/Anime/Genre/Harem.png",
             "overlay": true
         },
         {

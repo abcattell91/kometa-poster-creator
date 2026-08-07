@@ -40,8 +40,8 @@ a page (see below).
   blobs, waves, rings, dot grid, low poly, clouds, starfield) with two colours,
   a scale and a shuffle button. Seeded means the same settings always reproduce
   the same image, so a bulk export stays consistent.
-- **Fonts** — the bundled poster font plus the 13 Kometa defaults (Bebas Neue,
-  Comfortaa, Inter).
+- **Fonts** — the 13 Kometa defaults (Bebas Neue, Comfortaa, Inter), loaded at
+  runtime. Nothing is bundled.
 - **Plex** — sign in to pull your real collection names as autocomplete, or
   import a whole library's collections along with their current artwork.
 - **Two ways out** — download the zip for Kometa, or upload posters straight to

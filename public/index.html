@@ -259,6 +259,11 @@
                 <input id="edit-size-small" type="range" min="10" max="100" value="40" />
                 <output id="out-size-small">40</output>
               </label>
+              <div class="slider slider-pair">
+                <span class="field-label">Auto-fit</span>
+                <label class="checkbox"><input id="edit-autofit" type="checkbox" /> <span
+                    class="hint-inline">shrink text that would overflow</span></label>
+              </div>
               <label class="slider">
                 <span class="field-label">Spacing</span>
                 <input id="edit-tracking" type="range" min="-5" max="30" value="0" />
@@ -330,6 +335,7 @@
 
           <div class="button-row">
             <button id="edit-save" type="button" class="btn btn-primary">Add poster</button>
+            <button id="apply-style" type="button" class="btn">Apply style to selected</button>
             <button id="edit-reset" type="button" class="btn btn-ghost" hidden>New poster</button>
           </div>
         </div>
@@ -340,6 +346,7 @@
             <input id="select-all" type="checkbox" checked />
             <span id="selection-count" class="muted">0 selected</span>
           </label>
+          <button id="undo" type="button" class="btn btn-ghost" hidden>Undo</button>
         </div>
         <div id="items-list" class="items-list">
           <p class="empty">No collection selected.</p>
@@ -354,6 +361,11 @@
         <div class="button-row">
           <button id="download" type="button" class="btn btn-primary" disabled>Download .zip</button>
           <button id="cancel" type="button" class="btn btn-ghost" hidden>Cancel</button>
+        </div>
+        <div class="button-row data-row">
+          <button id="backup" type="button" class="btn btn-ghost">Back up my work</button>
+          <button id="restore" type="button" class="btn btn-ghost">Restore…</button>
+          <input id="restore-file" type="file" accept="application/json,.json" hidden />
         </div>
         <p class="hint actions-hint">Renders every ticked poster to a 600×900 PNG and downloads them as one
           zip, laid out the way Kometa expects — each poster becomes

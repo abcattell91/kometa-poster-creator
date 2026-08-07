@@ -166,6 +166,31 @@ The token lives in localStorage (`kometa-plex-token`) and goes only to plex.tv
 and the user's own server. It grants full account access, so this is safe for
 the intended local-only use and **not** safe if the app is ever hosted publicly.
 
+## Bulk styling, backup, overflow, undo
+
+**Apply style to selected** copies `STYLE_FIELDS` (every `TEXT_CONTROLS` key plus
+`dim` and `border`) from the editor onto each ticked poster, leaving text, name,
+background and Plex linkage alone. `IMAGE_STYLE_FIELDS` (fit/zoom/offsets) are
+copied only onto posters that actually have an image.
+
+**Backup** writes `{customCollections, builtinOverrides}` as JSON and restore
+merges it. The Plex token and wallhaven key are deliberately excluded — backup
+files get copied around, and credentials should not travel with them. Restore
+checks the `app` marker before touching anything.
+
+**Overflow** is flagged two ways: `posterOverflows()` badges individual rows and
+counts them in the toolbar, so a bulk export can't quietly ship clipped text.
+`autoFit` instead shrinks the offending line at draw time via
+`PosterBuilder.fitSize()` — one proportional step (glyph width is linear in
+point size) then a correction loop for the stroke width, which does not scale.
+Line positions still use the *requested* sizes, so enabling auto-fit never
+shifts the layout.
+
+**Undo** is single-level and covers the two deletions (a poster row, a custom
+collection). It stores a deep copy so later edits can't corrupt it, and clears
+on collection change — restoring into a collection you've navigated away from
+would be invisible.
+
 ## Editing built-in collections
 
 Every pill is editable, not just custom ones. `posters.js` is treated as

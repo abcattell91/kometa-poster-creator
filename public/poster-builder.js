@@ -106,7 +106,7 @@ class PosterBuilder {
     static get TEXT_DEFAULTS() {
         return {
             font: 'poster', sizeBig: 72, sizeSmall: 40, textColor: '#ffffff',
-            uppercase: true, tracking: 0, gap: 0,
+            uppercase: true, tracking: 0, gap: 0, autoFit: false,
             textX: 0, textY: 0, swap: false,
             strokeWidth: 0, strokeColor: '#000000',
             shadowBlur: 0, shadowY: 0, shadowOpacity: 60, bloom: 0
@@ -138,6 +138,31 @@ class PosterBuilder {
             : textWidth(str);
         pop();
         return w + (style.strokeWidth ?? 0);
+    }
+
+    /** Usable width: the canvas less the 25px border on each side. */
+    static get TEXT_LIMIT() {
+        return 600 - 50;
+    }
+
+    /** True if `str` would run past the border at `size`. */
+    static overflows(str, size, style) {
+        return PosterBuilder.measure(str, size, style) > PosterBuilder.TEXT_LIMIT;
+    }
+
+    /**
+     * Largest size at or below `size` that fits. Glyph width scales linearly
+     * with point size, so one proportional step lands very close; the loop then
+     * corrects for the stroke width, which does not scale.
+     */
+    static fitSize(str, size, style) {
+        const limit = PosterBuilder.TEXT_LIMIT;
+        const width0 = PosterBuilder.measure(str, size, style);
+        if (width0 <= limit) return size;
+
+        let fitted = Math.max(8, Math.floor(size * (limit / width0)));
+        while (fitted > 8 && PosterBuilder.measure(str, fitted, style) > limit) fitted -= 1;
+        return fitted;
     }
 
     /**
@@ -208,14 +233,19 @@ class PosterBuilder {
             noStroke();
         }
 
+        // Shrink to fit if asked. Line positions still use the requested sizes,
+        // so turning auto-fit on never shifts the layout — only the glyphs.
+        const size = (str, requested) =>
+            (s.autoFit ? PosterBuilder.fitSize(cased(str), requested, s) : requested);
+
         if (lines.length === 2) {
             // lines[1] normally sits above lines[0]; `swap` exchanges the slots.
             const lower = s.sizeBig / 2 + s.gap / 2;
             const upper = -s.sizeBig / 2 - s.gap / 2;
-            this.drawLine(cased(lines[0]), s.sizeBig, s.swap ? upper : lower, s);
-            this.drawLine(cased(lines[1]), s.sizeSmall, s.swap ? lower : upper, s);
+            this.drawLine(cased(lines[0]), size(lines[0], s.sizeBig), s.swap ? upper : lower, s);
+            this.drawLine(cased(lines[1]), size(lines[1], s.sizeSmall), s.swap ? lower : upper, s);
         } else if (lines.length === 1) {
-            this.drawLine(cased(lines[0]), s.sizeBig, s.sizeBig / 3, s);
+            this.drawLine(cased(lines[0]), size(lines[0], s.sizeBig), s.sizeBig / 3, s);
         }
 
         // Leave the context clean for whatever draws next.

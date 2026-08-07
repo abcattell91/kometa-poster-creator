@@ -125,6 +125,102 @@ const Store = {
     }
 };
 
+/**
+ * Single-level undo for deletions — the only destructive actions that aren't
+ * confirmed. Holds a deep copy, so a later edit can't corrupt what gets
+ * restored.
+ */
+const Undo = {
+    entry: null,
+
+    remember(label, restore) {
+        this.entry = { label, restore };
+        this.render();
+    },
+    clear() {
+        this.entry = null;
+        this.render();
+    },
+    apply() {
+        if (!this.entry) return;
+        const { restore, label } = this.entry;
+        this.entry = null;
+        restore();
+        Store.save();
+        ElementBuiler.renderItems();
+        ElementBuiler.refreshPill();
+        this.render();
+        UI.caption(`Restored ${label}.`);
+    },
+    render() {
+        const button = document.querySelector('#undo');
+        button.hidden = !this.entry;
+        button.textContent = this.entry ? `Undo delete: ${this.entry.label}` : 'Undo';
+    }
+};
+
+/** Export/import everything the app keeps in this browser. */
+const Backup = {
+    VERSION: 1,
+
+    download() {
+        const payload = {
+            app: 'kometa-poster-creator',
+            version: this.VERSION,
+            exportedAt: new Date().toISOString(),
+            // Deliberately excludes the Plex token and wallhaven key: a backup
+            // file gets copied around and shared, and credentials should not
+            // travel with it.
+            customCollections,
+            builtinOverrides
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `kometa-poster-creator-${new Date().toISOString().slice(0, 10)}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+        UI.caption('Backup downloaded.');
+    },
+
+    async restore(file) {
+        let payload;
+        try {
+            payload = JSON.parse(await file.text());
+        } catch {
+            UI.caption('That file is not valid JSON.');
+            return;
+        }
+        if (payload?.app !== 'kometa-poster-creator') {
+            UI.caption('That does not look like a Kometa Poster Creator backup.');
+            return;
+        }
+
+        const incoming = Object.keys(payload.customCollections ?? {});
+        const edits = Object.keys(payload.builtinOverrides ?? {});
+        const clashes = incoming.filter((name) => name in customCollections);
+        const message = [
+            `Restore ${incoming.length} custom collection(s) and edits to ${edits.length} built-in(s)?`,
+            clashes.length ? `\n${clashes.length} will overwrite what you have now: ${clashes.join(', ')}.` : '',
+            '\nAnything not in the backup is left alone.'
+        ].join('');
+        if (!confirm(message)) return;
+
+        Object.assign(customCollections, payload.customCollections ?? {});
+        Object.assign(builtinOverrides, payload.builtinOverrides ?? {});
+        if (!Store.save()) return;
+
+        Undo.clear();
+        ElementBuiler.renderPills();
+        // The active collection may have been replaced underneath us.
+        if (collectionName !== 'images') {
+            ElementBuiler.select(collectionName, collectionData(collectionName), activeIsCustom);
+        }
+        UI.caption(`Restored ${incoming.length} collection(s) from backup.`);
+    }
+};
+
 /** The posters a collection should show: an override if one exists. */
 function collectionData(key) {
     return customCollections[key] ?? builtinOverrides[key] ?? BUILTIN[key] ?? [];
@@ -262,6 +358,7 @@ const TEXT_CONTROLS = [
     ['#edit-font', 'font', 'poster'],
     ['#edit-size-big', 'sizeBig', 72, '#out-size-big'],
     ['#edit-size-small', 'sizeSmall', 40, '#out-size-small'],
+    ['#edit-autofit', 'autoFit', false],
     ['#edit-tracking', 'tracking', 0, '#out-tracking'],
     ['#edit-gap', 'gap', 0, '#out-gap'],
     ['#edit-text-x', 'textX', 0, '#out-text-x'],
@@ -279,6 +376,26 @@ const TEXT_CONTROLS = [
 
 const controlValue = (el) =>
     el.type === 'checkbox' ? el.checked : el.type === 'range' ? Number(el.value) : el.value;
+
+/**
+ * Fields copied by "Apply style to selected" — look, not content. Text, name,
+ * background and Plex linkage are deliberately excluded.
+ */
+const STYLE_FIELDS = [...TEXT_CONTROLS.map(([, key]) => key), 'dim', 'border'];
+/** Only meaningful on a poster that actually has an image. */
+const IMAGE_STYLE_FIELDS = ['fit', 'zoom', 'offsetX', 'offsetY'];
+
+/** Does either line of `poster` run past the canvas border? */
+function posterOverflows(poster) {
+    if (!poster.lines?.length || poster.autoFit) return false;
+    const style = { ...PosterBuilder.TEXT_DEFAULTS, ...poster };
+    const cased = (s) => (style.uppercase ? String(s).toUpperCase() : String(s));
+    if (poster.lines[0] && PosterBuilder.overflows(cased(poster.lines[0]), style.sizeBig, style)) {
+        return true;
+    }
+    return Boolean(poster.lines[1])
+        && PosterBuilder.overflows(cased(poster.lines[1]), style.sizeSmall, style);
+}
 
 /* ------------------------------------------------------------------ */
 /* Kometa Default-Images: fonts and backgrounds                        */
@@ -892,8 +1009,9 @@ const UI = {
     },
     selectionCount() {
         const n = selected.size;
+        const clipped = posters.filter(posterOverflows).length;
         document.querySelector('#selection-count').textContent =
-            `${n} of ${posters.length} selected`;
+            `${n} of ${posters.length} selected${clipped ? ` · ⚠ ${clipped} clipped` : ''}`;
         const all = document.querySelector('#select-all');
         all.checked = n > 0 && n === posters.length;
         all.indeterminate = n > 0 && n < posters.length;
@@ -947,6 +1065,9 @@ class ElementBuiler {
     }
 
     static select(name, data, isCustom) {
+        // Undo is scoped to the collection it was captured in — restoring into
+        // one you've navigated away from would be invisible and confusing.
+        if (name !== collectionName) Undo.clear();
         posters = data;
         collectionName = name;
         activeIsCustom = isCustom;
@@ -1035,6 +1156,17 @@ class ElementBuiler {
 
             row.append(box, swatch, body);
 
+            // Pre-flight: the editor warns for the poster being edited, but a
+            // bulk export would otherwise ship clipped text unnoticed.
+            if (posterOverflows(poster)) {
+                const warn = document.createElement('span');
+                warn.className = 'item-warn';
+                warn.textContent = '⚠';
+                warn.title = 'Text runs past the border and will be cut off. '
+                    + 'Shorten it, reduce the size, or turn on Auto-fit.';
+                row.appendChild(warn);
+            }
+
             const remove = document.createElement('button');
             remove.className = 'btn btn-ghost danger';
             remove.type = 'button';
@@ -1042,7 +1174,17 @@ class ElementBuiler {
             remove.title = 'Delete poster';
             remove.onclick = (event) => {
                 event.stopPropagation();
-                ensureEditable().splice(i, 1);
+                const list = ensureEditable();
+                const [removed] = list.splice(i, 1);
+                const snapshot = JSON.parse(JSON.stringify(removed));
+                const key = collectionName;
+                Undo.remember(snapshot.name || 'poster', () => {
+                    // Put it back where it was, in whichever collection it left.
+                    const target = customCollections[key] ?? builtinOverrides[key];
+                    target?.splice(Math.min(i, target.length), 0, snapshot);
+                    selected = new Set((customCollections[key] ?? builtinOverrides[key] ?? [])
+                        .map((_, n) => n));
+                });
                 // Indices shifted, so rebuild the selection wholesale.
                 selected = new Set(posters.map((_, n) => n));
                 Store.save();
@@ -1191,6 +1333,7 @@ class ElementBuiler {
         Wallhaven.observe();
 
         document.querySelector('#edit-save').onclick = () => ElementBuiler.savePoster();
+        document.querySelector('#apply-style').onclick = () => ElementBuiler.applyStyleToSelected();
         document.querySelector('#edit-reset').onclick = () => {
             ElementBuiler.resetForm();
             ElementBuiler.previewDraft();
@@ -1238,6 +1381,13 @@ class ElementBuiler {
                 ? `Its ${count} poster${count === 1 ? '' : 's'} will be lost.`
                 : 'It is empty.';
             if (!confirm(`Delete the collection "${collectionName}"?\n\n${detail} This cannot be undone.`)) return;
+            const removedName = collectionName;
+            const removedData = JSON.parse(JSON.stringify(customCollections[removedName]));
+            Undo.remember(`collection “${removedName}”`, () => {
+                customCollections[removedName] = removedData;
+                ElementBuiler.renderPills();
+                ElementBuiler.select(removedName, customCollections[removedName], true);
+            });
             delete customCollections[collectionName];
             Store.save();
             posters = [];
@@ -1438,6 +1588,38 @@ class ElementBuiler {
         document.querySelector('#edit-warning').hidden = true;
     }
 
+    /**
+     * Copy the editor's current look onto every ticked poster, leaving their
+     * text, name and background alone. Image framing only applies to posters
+     * that have an image.
+     */
+    static applyStyleToSelected() {
+        const style = ElementBuiler.draftPoster();
+        const targets = [...selected].sort((a, b) => a - b);
+        if (!targets.length) {
+            UI.caption('Tick some posters first.');
+            return;
+        }
+        if (!confirm(`Apply this poster's style to ${targets.length} selected poster(s)?\n\n`
+            + 'Their text, names and backgrounds are left unchanged.')) {
+            return;
+        }
+
+        const list = ensureEditable();
+        for (const i of targets) {
+            const target = list[i];
+            if (!target) continue;
+            for (const key of STYLE_FIELDS) target[key] = style[key];
+            if (target.url || target.plexThumb) {
+                for (const key of IMAGE_STYLE_FIELDS) target[key] = style[key];
+            }
+        }
+        if (!Store.save()) return;
+        ElementBuiler.renderItems();
+        ElementBuiler.refreshPill();
+        UI.caption(`Styled ${targets.length} poster${targets.length === 1 ? '' : 's'}.`);
+    }
+
     static savePoster() {
         const poster = ElementBuiler.draftPoster();
         // An imported Plex poster is artwork with no text, so a background is
@@ -1468,6 +1650,16 @@ class ElementBuiler {
 
     static itemControls() {
         document.querySelector('#item-search').oninput = () => ElementBuiler.renderItems();
+        document.querySelector('#undo').onclick = () => Undo.apply();
+
+        document.querySelector('#backup').onclick = () => Backup.download();
+        const file = document.querySelector('#restore-file');
+        document.querySelector('#restore').onclick = () => file.click();
+        file.onchange = () => {
+            if (file.files[0]) Backup.restore(file.files[0]);
+            // Reset so re-picking the same file fires change again.
+            file.value = '';
+        };
         document.querySelector('#select-all').onchange = (event) => {
             // Select-all applies to what the filter is currently showing.
             const query = document.querySelector('#item-search').value.trim().toLowerCase();

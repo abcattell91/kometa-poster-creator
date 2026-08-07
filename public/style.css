@@ -267,6 +267,28 @@ canvas {
   background-position: center;
 }
 
+.item-warn {
+  flex-shrink: 0;
+  color: #b4690e;
+  font-size: 13px;
+  cursor: help;
+}
+
+@media (prefers-color-scheme: dark) {
+  .item-warn {
+    color: #e0a758;
+  }
+}
+
+.data-row {
+  margin-top: 10px;
+}
+
+.data-row .btn {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
 .empty {
   margin: 0;
   padding: 32px 0;

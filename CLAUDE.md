@@ -16,8 +16,10 @@ non-static route is `/api/wallhaven`, a search proxy (see below).
 - `public/sketch.js` — p5 lifecycle, UI wiring, and the bulk export loop
   (`createPoster`), which recurses through the active array and zips the PNGs.
 - `public/index.html`, `public/style.css` — markup and styling.
-- `public/FFGoodProCond-Medium.ttf` — the poster font. Loaded from `/` (absolute
-  path), so the server must be rooted at `public/`.
+- The default font is Bebas Neue, fetched from jsDelivr in `preload()`. Nothing
+  is bundled: the original FF Good Condensed is a commercial face and could not
+  be redistributed once this repo went public. Falls back to `sans-serif` if the
+  CDN is unreachable.
 
 Run with `node index.js`. The `python3 -m http.server` fallback still serves the
 app but the wallhaven picker won't work — that needs the Express route.

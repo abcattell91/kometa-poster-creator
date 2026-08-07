@@ -82,6 +82,30 @@ Your wallhaven key, custom collections and edits to the built-in collections are
 stored the same way, so they live in one browser on one machine and are cleared
 along with site data.
 
+## Licensing
+
+Please read this before reusing anything here.
+
+- **My changes** (the editor, the Plex/wallhaven/Kometa integrations, the server
+  routes) are offered freely — do what you like with them.
+- **The upstream project** this forks,
+  [ricoloic/Kometa-PMM-Poster-Creator](https://github.com/ricoloic/Kometa-PMM-Poster-Creator),
+  carries **no licence**, which under default copyright means all rights
+  reserved. That covers the original poster definitions in `public/posters.js`
+  and the background art in `public/assets/`. I can't grant you rights over
+  those, so treat them as the original author's.
+- **No font is bundled.** The default typeface is Bebas Neue, fetched at runtime
+  from the Kometa Default-Images repo. An earlier version shipped FF Good
+  Condensed, a commercial face that shouldn't be redistributed.
+- **Kometa's images and fonts** are loaded from
+  [Kometa-Team/Default-Images](https://github.com/Kometa-Team/Default-Images) at
+  runtime and are not redistributed here.
+- **wallhaven images** belong to their respective artists. The picker is a
+  search front-end; check the source before using anything publicly.
+
+If you want to build on this properly, the clean path is asking the upstream
+author to add a licence.
+
 ## Notes
 
 - Plex is contacted directly from the browser — both plex.tv and Plex Media

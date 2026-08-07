@@ -390,26 +390,6 @@ const ANIME = {
         },
         {
             "type": "genre",
-            "name": "Ecchi",
-            "lines": [
-                "Ecchi",
-                "genre"
-            ],
-            "url": "assets/Anime/Genre/Ecchi.png",
-            "overlay": true
-        },
-        {
-            "type": "genre",
-            "name": "Erotica",
-            "lines": [
-                "Erotica",
-                "genre"
-            ],
-            "url": "assets/Anime/Genre/Erotica.png",
-            "overlay": true
-        },
-        {
-            "type": "genre",
             "name": "Fantasy",
             "lines": [
                 "Fantasy",
@@ -456,16 +436,6 @@ const ANIME = {
                 "genre"
             ],
             "url": "assets/Anime/Genre/Harem.png",
-            "overlay": true
-        },
-        {
-            "type": "genre",
-            "name": "Hentai",
-            "lines": [
-                "Hentai",
-                "genre"
-            ],
-            "url": "assets/Anime/Genre/Hentai.png",
             "overlay": true
         },
         {

@@ -65,8 +65,16 @@ var previewDirty = false;
 var running = false;
 var cancelled = false;
 
+// The default typeface. Bebas Neue is one of the fonts Kometa itself ships, and
+// is loaded from a CDN rather than bundled — the previous default was a
+// commercial face that could not be redistributed with this repo.
+var DEFAULT_FONT_URL =
+    'https://cdn.jsdelivr.net/gh/Kometa-Team/Default-Images@master/BebasNeue-Regular.ttf';
+
 function preload() {
-    font = loadFont('/FFGoodProCond-Medium.ttf');
+    // Falls back to a system face if the CDN is unreachable, so the app still
+    // runs offline rather than failing to start.
+    font = loadFont(DEFAULT_FONT_URL, undefined, () => { font = 'sans-serif'; });
 }
 
 function setup() {

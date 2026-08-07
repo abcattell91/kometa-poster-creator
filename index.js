@@ -100,18 +100,32 @@ let kometaCachedAt = 0;
 async function kometaFiles() {
     if (kometaCache && Date.now() - kometaCachedAt < 6 * 60 * 60 * 1000) return kometaCache;
 
-    const response = await fetch(KOMETA_TREE, {
-        headers: {
-            Accept: 'application/vnd.github+json',
-            'User-Agent': 'kometa-poster-creator',
-            ...(process.env.GITHUB_TOKEN
-                ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {})
+    // GitHub 5xxs intermittently on this endpoint, and a single failure would
+    // otherwise leave the picker empty until the page is reloaded.
+    let response;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt) await new Promise((r) => setTimeout(r, 400 * attempt));
+        try {
+            response = await fetch(KOMETA_TREE, {
+                headers: {
+                    Accept: 'application/vnd.github+json',
+                    'User-Agent': 'kometa-poster-creator',
+                    ...(process.env.GITHUB_TOKEN
+                        ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {})
+                }
+            });
+        } catch (err) {
+            response = null;
         }
-    });
+        // A 4xx won't change on retry; only server-side faults are worth repeating.
+        if (response && (response.ok || response.status < 500)) break;
+    }
+
+    if (!response) throw new Error('Could not reach GitHub.');
     if (!response.ok) {
         throw new Error(response.status === 403
             ? 'GitHub rate limit reached (60/hour). Try again later, or set GITHUB_TOKEN.'
-            : `GitHub returned ${response.status}.`);
+            : `GitHub is having trouble (${response.status}) — this is usually temporary.`);
     }
     const body = await response.json();
     kometaCache = (body.tree ?? [])

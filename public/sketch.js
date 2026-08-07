@@ -455,7 +455,12 @@ const Kometa = {
         node.textContent = message;
     },
 
+    get loaded() {
+        return document.querySelector('#km-category').options.length > 1;
+    },
+
     async loadCategories() {
+        if (this.loaded) return true;
         try {
             const response = await fetch('/api/kometa/categories');
             const body = await response.json();
@@ -467,8 +472,14 @@ const Kometa = {
                 option.textContent = `${name.replace(/_/g, ' ')} (${count})`;
                 select.appendChild(option);
             }
+            this.status('', false);
+            return true;
         } catch (err) {
-            this.status(err.message);
+            // Recoverable: retried whenever the picker is next used, so a blip
+            // at startup doesn't disable it until the page is reloaded.
+            this.status(`${err.message} Click here to retry.`);
+            document.querySelector('#km-status').classList.add('retry');
+            return false;
         }
     },
 
@@ -545,12 +556,29 @@ const Kometa = {
         }
     },
 
+    /** Re-fetch the category list if a startup failure left it empty. */
+    async retry() {
+        document.querySelector('#km-status').classList.remove('retry');
+        this.status('Retrying…');
+        if (await this.loadCategories()) this.search(1);
+    },
+
     attach() {
-        document.querySelector('#km-category').onchange = () => this.search(1);
-        document.querySelector('#km-query').oninput = () => {
+        const category = document.querySelector('#km-category');
+        const query = document.querySelector('#km-query');
+
+        category.onchange = () => this.search(1);
+        query.oninput = () => {
             clearTimeout(this.debounce);
             this.debounce = setTimeout(() => this.search(1), 250);
         };
+        // Any attempt to use the picker retries a failed startup fetch.
+        category.onfocus = () => { if (!this.loaded) this.retry(); };
+        query.onfocus = () => { if (!this.loaded) this.retry(); };
+        document.querySelector('#km-status').onclick = () => {
+            if (!this.loaded) this.retry();
+        };
+
         this.observe();
         this.loadCategories();
     }

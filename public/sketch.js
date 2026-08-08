@@ -2160,7 +2160,16 @@ class ElementBuiler {
             return previewRun;
         }
         previewing = true;
-        previewRun = ElementBuiler.runPreview().finally(() => { previewing = false; });
+        // Must never reject: callers consume this to clear a status line, and a
+        // rejection would leave "Loading…" on screen for good. runPreview()
+        // guards its draw loop, but not the caption and overflow work after it.
+        previewRun = ElementBuiler.runPreview()
+            .catch((err) => {
+                console.error('Preview failed:', err);
+                UI.caption(`Preview failed: ${err.message}`);
+                return [err.message];
+            })
+            .finally(() => { previewing = false; });
         return previewRun;
     }
 

@@ -647,6 +647,82 @@ canvas {
   font-size: 12px;
 }
 
+/* Icons are square and mostly whitespace, so the 2:3 poster thumb and its
+   cover-fit would crop and stretch them. */
+.ic-grid {
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  max-height: 220px;
+}
+
+.ic-grid .wh-thumb {
+  aspect-ratio: 1;
+  background-size: 55%;
+  background-repeat: no-repeat;
+}
+
+.overlays-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.overlay-row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 30px auto auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.overlay-row .btn {
+  padding: 3px 6px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.overlay-thumb {
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  background: var(--surface);
+  background-size: 80%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.overlay-name {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Second row of the grid: the numeric fields, spanning every column. */
+.overlay-fields {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.overlay-fields label {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.overlay-fields .input {
+  width: 56px;
+  padding: 3px 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 .pattern-colours {
   display: inline-flex;
   align-items: center;

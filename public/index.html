@@ -228,6 +228,28 @@
           </div>
 
           <div class="adjust">
+            <button id="overlay-toggle" type="button" class="btn btn-ghost section-toggle" aria-expanded="false">
+              Overlays
+            </button>
+
+            <div id="overlay-style" class="adjust-rows" hidden>
+              <div class="wh">
+                <div class="wh-search">
+                  <input id="ic-query" type="search" class="input" placeholder="Search icons — star, film, skull, crown…"
+                    autocomplete="off" />
+                </div>
+                <p id="ic-status" class="hint" hidden></p>
+                <div id="ic-results" class="wh-grid ic-grid"></div>
+              </div>
+
+              <div id="overlays-editor" class="overlays-editor"></div>
+              <p id="overlay-empty" class="hint">No overlays yet — search above and click an icon to add one.
+                Overlays draw over the background and under the text. Colour applies to single-colour
+                icons; sets that ship their own colours (twemoji, noto) keep them.</p>
+            </div>
+          </div>
+
+          <div class="adjust">
             <button id="poster-toggle" type="button" class="btn btn-ghost section-toggle" aria-expanded="false">
               Advanced Poster Editing
             </button>

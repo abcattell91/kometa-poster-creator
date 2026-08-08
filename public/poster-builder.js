@@ -1,8 +1,38 @@
 class PosterBuilder {
     static cache = new Map();
 
+    // Iconify: ~200k open-source icons, no API key, and every response carries
+    // `access-control-allow-origin: *` — so unlike wallhaven this needs no proxy
+    // route in index.js.
+    static ICON_API = 'https://api.iconify.design';
+    // Raw SVG text, keyed by icon name ("mdi:star"), plus the usual in-flight
+    // de-duplication.
+    static iconSources = new Map();
+    static iconPending = new Map();
+    // Rasterised icons, keyed by name + colour + pixel size. Bounded: dragging
+    // the colour picker mints a new key on every input event.
+    static iconCache = new Map();
+    static ICON_LIMIT = 24;
+
+    // In-flight decodes, so the same image is never fetched twice at once.
+    static pending = new Map();
+    /**
+     * Decoded backgrounds held at once. Unbounded was fine for the 600x900
+     * PNGs in assets/, but a wallhaven original is nothing like those: a
+     * 1920x3413 PNG decodes to ~26MB of RGBA whatever its file size, so a
+     * browsing session used to hold hundreds of megabytes and eventually fail
+     * to decode anything more — which showed up as backgrounds silently not
+     * appearing. Only the image being edited needs to stay cached for the
+     * sliders, so a small window costs nothing.
+     */
+    static CACHE_LIMIT = 12;
+
     constructor(type) {
         this.type = type;
+        // Things that failed to load during this draw. A blank area of canvas
+        // cannot tell "black background" apart from "image never arrived", so
+        // callers report these rather than let a poster fail silently.
+        this.warnings = [];
     }
 
     static init(type = "default") {
@@ -38,6 +68,10 @@ class PosterBuilder {
                 h = img.height * factor;
             }
             image(img, offsetX, offsetY, w * zoom, h * zoom);
+        } else {
+            // Leaves the canvas on whatever drew before it — usually black —
+            // which is indistinguishable from a deliberate dark poster.
+            this.warnings.push('the background image could not be loaded');
         }
         pop();
         return this;
@@ -49,14 +83,153 @@ class PosterBuilder {
      */
     static load(imagepath) {
         if (PosterBuilder.cache.has(imagepath)) {
-            return Promise.resolve(PosterBuilder.cache.get(imagepath));
+            // Re-insert so the *least* recently used entry is the one evicted.
+            const hit = PosterBuilder.cache.get(imagepath);
+            PosterBuilder.cache.delete(imagepath);
+            PosterBuilder.cache.set(imagepath, hit);
+            return Promise.resolve(hit);
         }
+        // De-duplicate: a slider drag, or clicking the same thumbnail twice,
+        // can ask for the same multi-megabyte wallpaper several times before
+        // the first decode finishes.
+        if (!PosterBuilder.pending.has(imagepath)) {
+            PosterBuilder.pending.set(imagepath, PosterBuilder.decode(imagepath).then((img) => {
+                PosterBuilder.pending.delete(imagepath);
+                if (img) PosterBuilder.remember(imagepath, img);
+                return img;
+            }));
+        }
+        return PosterBuilder.pending.get(imagepath);
+    }
+
+    /** Cache one image, dropping the least recently used past the limit. */
+    static remember(path, img) {
+        // Map iterates in insertion order, so this is the oldest entry.
+        if (PosterBuilder.cache.size >= PosterBuilder.CACHE_LIMIT) {
+            PosterBuilder.cache.delete(PosterBuilder.cache.keys().next().value);
+        }
+        PosterBuilder.cache.set(path, img);
+    }
+
+    /**
+     * Decode without caching. Icons keep their own bounded cache, so they must
+     * not land in `PosterBuilder.cache`, which is unbounded by design.
+     */
+    static decode(src) {
         return new Promise((resolve) => {
-            loadImage(imagepath, (img) => {
-                PosterBuilder.cache.set(imagepath, img);
-                resolve(img);
-            }, () => resolve(null));
+            loadImage(src, (img) => resolve(img), () => resolve(null));
         });
+    }
+
+    /**
+     * Per-overlay defaults. Every field is optional on a poster entry, and a
+     * poster with no `overlays` array draws exactly as it always did.
+     */
+    static get OVERLAY_DEFAULTS() {
+        return {
+            icon: '', color: '#ffffff', size: 220, x: 0, y: 0,
+            rotate: 0, opacity: 100, flipX: false
+        };
+    }
+
+    /**
+     * Iconify SVG source for one icon name, cached for the session.
+     *
+     * Fetched as *text* rather than pointed at with loadImage, for two reasons.
+     * Recolouring is then a local `currentColor` replace, so dragging the colour
+     * picker costs no network round trip. And the data: URL built from it is
+     * same-origin — a cross-origin SVG drawn onto the canvas risks tainting it,
+     * and a tainted canvas makes toDataURL() throw for every poster in the run,
+     * not just this one.
+     */
+    static iconSource(name) {
+        if (PosterBuilder.iconSources.has(name)) {
+            return Promise.resolve(PosterBuilder.iconSources.get(name));
+        }
+        if (!PosterBuilder.iconPending.has(name)) {
+            // "mdi:star" -> "mdi/star.svg".
+            const [prefix, ...rest] = String(name).split(':');
+            const remember = (svg) => {
+                PosterBuilder.iconSources.set(name, svg);
+                return svg;
+            };
+            PosterBuilder.iconPending.set(name, fetch(
+                `${PosterBuilder.ICON_API}/${prefix}/${rest.join(':')}.svg`)
+                .then((response) => (response.ok ? response.text() : ''))
+                // An unknown icon answers with a plain-text body, not an SVG.
+                .then((text) => remember(text.trimStart().startsWith('<svg') ? text : ''))
+                .catch(() => remember('')));
+        }
+        return PosterBuilder.iconPending.get(name);
+    }
+
+    /**
+     * Rasterise one icon at `px` square in `colour`.
+     *
+     * Iconify serves monochrome icons as `fill="currentColor"`, so the replace
+     * is a true recolour rather than a tint. Multi-colour sets (twemoji, noto,
+     * the `-poly` sets) carry real fills and are deliberately left alone.
+     *
+     * The source is sized `1em`, which an <img> decode cannot resolve, so real
+     * pixels are substituted. Non-square viewBoxes letterbox inside the square
+     * under the SVG default preserveAspectRatio, which makes `size` the longest
+     * side rather than a distortion.
+     */
+    static async loadIcon(name, colour, px) {
+        const key = `${name}|${colour}|${px}`;
+        if (PosterBuilder.iconCache.has(key)) return PosterBuilder.iconCache.get(key);
+
+        const source = await PosterBuilder.iconSource(name);
+        if (!source) return null;
+        // Scoped to the opening tag: a bare first-match replace would rewrite a
+        // child <rect>'s width on any icon whose root carries none.
+        const svg = source
+            .replace(/currentColor/g, colour)
+            .replace(/<svg\b[^>]*>/, (tag) => tag
+                .replace(/\s(?:width|height)="[^"]*"/g, '')
+                .replace('<svg', `<svg width="${px}" height="${px}"`));
+        const img = await PosterBuilder.decode(
+            `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+
+        if (img) {
+            // Map iterates in insertion order, so this evicts the oldest entry.
+            if (PosterBuilder.iconCache.size >= PosterBuilder.ICON_LIMIT) {
+                PosterBuilder.iconCache.delete(PosterBuilder.iconCache.keys().next().value);
+            }
+            PosterBuilder.iconCache.set(key, img);
+        }
+        return img;
+    }
+
+    /**
+     * Draw icon overlays, in list order, each on its own layer. Drawn between
+     * the dim wash and the text so the text stays legible on top.
+     */
+    async overlays(list = []) {
+        for (const entry of list) {
+            const o = { ...PosterBuilder.OVERLAY_DEFAULTS, ...entry };
+            if (!o.icon) continue;
+            // Rounded up to a 128px bucket so a size drag reuses a handful of
+            // decodes instead of minting one per pixel.
+            const px = Math.min(1024, Math.max(128, Math.ceil(o.size / 128) * 128));
+            const img = await PosterBuilder.loadIcon(o.icon, o.color, px);
+            if (!img) {
+                this.warnings.push(`the “${o.icon}” overlay could not be loaded`);
+                continue;
+            }
+
+            push();
+            translate(width / 2 + o.x, height / 2 + o.y);
+            if (o.rotate) rotate(radians(o.rotate));
+            if (o.flipX) scale(-1, 1);
+            imageMode(CENTER);
+            const alpha = Math.max(0, Math.min(100, o.opacity)) / 100;
+            // push()/pop() restores tint, so this can't leak into the next draw.
+            if (alpha < 1) tint(255, alpha * 255);
+            image(img, 0, 0, o.size, o.size);
+            pop();
+        }
+        return this;
     }
 
     /** Flat black wash over the background, for text legibility. */

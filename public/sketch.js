@@ -56,9 +56,12 @@ var pendingPlexThumb = null;
 // True while editing a poster imported from Plex, whose name must keep matching
 // the Plex collection exactly.
 var editingPlexPoster = false;
-// Coalesce preview redraws while a slider is being dragged.
+// Coalesce preview redraws while a slider is being dragged. `previewRun` is the
+// in-flight draw, handed back to callers that coalesced into it so they can wait
+// for the canvas to actually catch up.
 var previewing = false;
 var previewDirty = false;
+var previewRun = null;
 
 // Set while an export/preview run is in flight so the buttons can lock and
 // Cancel has something to flip.
@@ -88,6 +91,7 @@ function setup() {
     ElementBuiler.uploadToPlex();
     Plex.attach();
     Kometa.attach();
+    Icons.attach();
 }
 
 /* ------------------------------------------------------------------ */
@@ -273,6 +277,7 @@ async function drawPoster(poster) {
             imageSource = await Plex.thumbUrl(poster.plexThumb);
         } catch {
             imageSource = null;
+            builder.warnings.push('the Plex artwork could not be fetched');
         }
     }
 
@@ -297,6 +302,10 @@ async function drawPoster(poster) {
         builder.overlay(false);
     }
     if (poster.dim) builder.dim(poster.dim / 100);
+    // Icon overlays sit above the background and its wash but below the text,
+    // so text stays readable on top of them. Absent on every poster that
+    // predates the feature, so the whole step is skipped.
+    if (poster.overlays?.length) await builder.overlays(poster.overlays);
     // The poster doubles as the style object; unset fields fall back to the
     // defaults in PosterBuilder.TEXT_DEFAULTS, so posters.js entries are
     // unaffected.
@@ -304,6 +313,10 @@ async function drawPoster(poster) {
     // Imported Plex artwork already has its own framing, so the white border is
     // opt-out. Everything else defaults to drawing it, as before.
     if (poster.border !== false) builder.side();
+    // Handed back so callers can report anything that failed to load — the
+    // canvas alone cannot show the difference between a dark poster and a
+    // background that never arrived.
+    return builder;
 }
 
 /**
@@ -318,12 +331,18 @@ async function runExport(list, filename = 'images') {
     // Fresh archive per run — a shared one accumulates across downloads.
     zip = new JSZip();
     UI.runStart(list.length);
+    const incomplete = [];
 
     for (let i = 0; i < list.length; i++) {
         if (cancelled) break;
         const poster = list[i];
         UI.progress(i, list.length, poster.name);
-        await drawPoster(poster);
+        const drawn = await drawPoster(poster);
+        // A poster whose background never loaded still exports — as a black
+        // rectangle. Worth saying so rather than shipping it unnoticed.
+        if (drawn?.warnings.length) {
+            incomplete.push(`${poster.name}: ${drawn.warnings.join('; ')}`);
+        }
 
         const dataURL = cvn.elt.toDataURL('image/png');
         zip.file(assetPath(poster.name), dataURL.split(',')[1], { base64: true });
@@ -346,7 +365,13 @@ async function runExport(list, filename = 'images') {
     }
 
     running = false;
-    UI.runEnd(cancelled ? 'Cancelled' : `Done — ${list.length} poster${list.length === 1 ? '' : 's'}`);
+    UI.runEnd([
+        cancelled ? 'Cancelled' : `Done — ${list.length} poster${list.length === 1 ? '' : 's'}`,
+        incomplete.length ? `⚠ ${incomplete.length} missing artwork` : ''
+    ].filter(Boolean).join(' · '));
+    if (incomplete.length) {
+        console.warn('Exported with missing artwork:\n' + incomplete.join('\n'));
+    }
 }
 
 /**
@@ -699,6 +724,109 @@ const Kometa = {
 
         this.observe();
         this.loadCategories();
+    }
+};
+
+/* ------------------------------------------------------------------ */
+/* iconify overlay picker                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Search Iconify for overlay art. Called straight from the browser: unlike
+ * wallhaven, api.iconify.design sends `access-control-allow-origin: *`, so
+ * there is no proxy route and the app needs no API key or account.
+ *
+ * Only the icon *name* is ever stored on a poster ("mdi:star"), so an overlay
+ * costs a couple of dozen bytes in localStorage. PosterBuilder does the
+ * fetching, recolouring and rasterising; this module is the picker alone.
+ */
+const Icons = {
+    // Grey reads against both the light and dark thumbnail background.
+    THUMB_COLOR: '#888888',
+    busy: false,
+    searched: false,
+    // Iconify returns metadata for each set a result came from, which is where
+    // the licence comes from.
+    sets: {},
+
+    status(message, show = true) {
+        const node = document.querySelector('#ic-status');
+        node.hidden = !show;
+        node.textContent = message;
+    },
+
+    /** Preview URL for one icon at a given colour. */
+    url(name, colour, px = 44) {
+        const [prefix, ...rest] = String(name).split(':');
+        const params = new URLSearchParams({ height: px, color: colour });
+        return `${PosterBuilder.ICON_API}/${prefix}/${rest.join(':')}.svg?${params}`;
+    },
+
+    async search(query) {
+        const term = (query ?? document.querySelector('#ic-query').value).trim();
+        if (this.busy) return;
+        if (!term) {
+            this.render([]);
+            this.status('', false);
+            return;
+        }
+        this.busy = true;
+        this.searched = true;
+        this.status('Searching…');
+
+        try {
+            const response = await fetch(
+                `${PosterBuilder.ICON_API}/search?${new URLSearchParams({ query: term, limit: 64 })}`);
+            if (!response.ok) throw new Error(`Iconify returned ${response.status}.`);
+            const body = await response.json();
+            Object.assign(this.sets, body.collections ?? {});
+
+            const names = body.icons ?? [];
+            this.render(names);
+            this.status(names.length
+                ? `${names.length} icon${names.length === 1 ? '' : 's'} — click one to add it`
+                : 'Nothing matched.');
+        } catch (err) {
+            this.status(`${err.message} Icons load directly from api.iconify.design.`);
+        } finally {
+            this.busy = false;
+        }
+    },
+
+    render(names) {
+        const grid = document.querySelector('#ic-results');
+        grid.querySelectorAll('.wh-thumb').forEach((node) => node.remove());
+
+        for (const name of names) {
+            const prefix = name.split(':')[0];
+            const set = this.sets[prefix];
+            const thumb = document.createElement('button');
+            thumb.type = 'button';
+            thumb.className = 'wh-thumb';
+            thumb.style.backgroundImage = `url("${this.url(name, this.THUMB_COLOR)}")`;
+            // `palette: true` marks a set whose icons carry their own colours,
+            // which the overlay colour deliberately leaves alone.
+            thumb.title = [
+                name,
+                set?.name,
+                set?.license?.title,
+                set?.palette ? 'multi-colour — the colour picker will not change it' : ''
+            ].filter(Boolean).join(' · ');
+            thumb.innerHTML = `<span class="wh-res">${prefix}</span>`;
+            thumb.onclick = () => ElementBuiler.addOverlay(name);
+            grid.appendChild(thumb);
+        }
+    },
+
+    attach() {
+        const query = document.querySelector('#ic-query');
+        query.oninput = () => {
+            clearTimeout(this.debounce);
+            this.debounce = setTimeout(() => this.search(), 300);
+        };
+        query.onkeydown = (event) => {
+            if (event.key === 'Enter') { event.preventDefault(); this.search(); }
+        };
     }
 };
 
@@ -1219,11 +1347,22 @@ const Wallhaven = {
                 // and the CDN allows cross-origin reads so the canvas stays
                 // exportable.
                 pendingImage = item.full;
+                // Kept in step with the Kometa picker: a stale thumb path left
+                // behind here would be picked up by an edit that clears the URL.
+                pendingPlexThumb = null;
                 document.querySelector('input[name="bg"][value="image"]').checked = true;
                 document.querySelector('#clear-image').hidden = false;
                 ElementBuiler.defaultDim();
+                // Wallhaven serves full-resolution originals, which can be tens
+                // of megabytes; the status stays up until the draw really lands.
                 this.status(`Loading ${item.resolution} image…`);
-                ElementBuiler.previewDraft().then(() => this.status('', false));
+                ElementBuiler.previewDraft().then((warnings) => {
+                    const failed = warnings?.length;
+                    this.status(failed
+                        ? `Could not load that ${item.resolution} wallpaper. It may be too large for `
+                            + 'the browser to decode — try a smaller one.'
+                        : '', Boolean(failed));
+                });
             };
             grid.insertBefore(thumb, sentinel);
         }
@@ -1553,13 +1692,20 @@ class ElementBuiler {
         }
 
         for (const [toggleSel, panelSel] of [
-            ['#text-toggle', '#text-style'], ['#poster-toggle', '#poster-style']
+            ['#text-toggle', '#text-style'], ['#poster-toggle', '#poster-style'],
+            ['#overlay-toggle', '#overlay-style']
         ]) {
             const toggle = document.querySelector(toggleSel);
             const panel = document.querySelector(panelSel);
             toggle.onclick = () => {
                 panel.hidden = !panel.hidden;
                 toggle.setAttribute('aria-expanded', String(!panel.hidden));
+                // Seed the grid the first time the picker is opened, so it
+                // shows something rather than an empty box. Nothing is fetched
+                // from Iconify until then.
+                if (panelSel === '#overlay-style' && !panel.hidden && !Icons.searched) {
+                    Icons.search('star');
+                }
             };
         }
 
@@ -1724,6 +1870,11 @@ class ElementBuiler {
             ...(editingPlexPoster ? { plex: true } : {}),
             ...ElementBuiler.readTextStyle()
         };
+        // Only set when there is something to draw, so a poster without
+        // overlays keeps exactly the shape it had before the feature existed.
+        const overlays = ElementBuiler.readOverlays();
+        if (overlays.length) poster.overlays = overlays;
+
         const patternSelected =
             document.querySelector('input[name="bg"][value="pattern"]').checked;
 
@@ -1836,6 +1987,119 @@ class ElementBuiler {
         return poster.swap ? [big, small] : [small, big];
     }
 
+    /* -------------------- overlays -------------------- */
+
+    /**
+     * One editable overlay. Number boxes rather than sliders for the same reason
+     * the line rows use them: five ranges squeezed into this width would be
+     * impossible to set precisely.
+     */
+    static overlayRow(entry = {}) {
+        const o = { ...PosterBuilder.OVERLAY_DEFAULTS, ...entry };
+        const row = document.createElement('div');
+        row.className = 'overlay-row';
+        row.dataset.icon = o.icon;
+        row.innerHTML = `
+            <span class="overlay-thumb"></span>
+            <span class="overlay-name"></span>
+            <input type="color" class="color-input overlay-color" title="Overlay colour" />
+            <button type="button" class="btn btn-ghost overlay-move" data-dir="-1" title="Move up">↑</button>
+            <button type="button" class="btn btn-ghost overlay-move" data-dir="1" title="Move down">↓</button>
+            <button type="button" class="btn btn-ghost danger overlay-del" title="Remove overlay">✕</button>
+            <div class="overlay-fields">
+                <label>Size <input type="number" class="input overlay-size" min="16" max="900" step="4" /></label>
+                <label>X <input type="number" class="input overlay-x" min="-300" max="300" step="5" /></label>
+                <label>Y <input type="number" class="input overlay-y" min="-450" max="450" step="5" /></label>
+                <label>Turn <input type="number" class="input overlay-rotate" min="-180" max="180" step="5" /></label>
+                <label>Alpha <input type="number" class="input overlay-opacity" min="0" max="100" step="5" /></label>
+                <label class="checkbox"><input type="checkbox" class="overlay-flip" /> Flip</label>
+            </div>`;
+
+        row.querySelector('.overlay-name').textContent = o.icon;
+        row.querySelector('.overlay-name').title = o.icon;
+        row.querySelector('.overlay-color').value = o.color;
+        row.querySelector('.overlay-size').value = o.size;
+        row.querySelector('.overlay-x').value = o.x;
+        row.querySelector('.overlay-y').value = o.y;
+        row.querySelector('.overlay-rotate').value = o.rotate;
+        row.querySelector('.overlay-opacity').value = o.opacity;
+        row.querySelector('.overlay-flip').checked = Boolean(o.flipX);
+
+        // The row's own swatch follows its colour, so several overlays stay
+        // tellable apart at a glance.
+        const paintThumb = () => {
+            row.querySelector('.overlay-thumb').style.backgroundImage =
+                `url("${Icons.url(o.icon, row.querySelector('.overlay-color').value, 28)}")`;
+        };
+        paintThumb();
+
+        for (const field of row.querySelectorAll('input')) {
+            field.oninput = () => {
+                if (field.classList.contains('overlay-color')) paintThumb();
+                ElementBuiler.previewDraft();
+            };
+            field.onchange = () => ElementBuiler.previewDraft();
+        }
+        for (const button of row.querySelectorAll('.overlay-move')) {
+            button.onclick = () => {
+                const dir = Number(button.dataset.dir);
+                const list = row.parentElement;
+                const rows = [...list.children];
+                const to = rows.indexOf(row) + dir;
+                if (to < 0 || to >= rows.length) return;
+                list.insertBefore(dir < 0 ? row : rows[to], dir < 0 ? rows[to] : row);
+                ElementBuiler.previewDraft();
+            };
+        }
+        row.querySelector('.overlay-del').onclick = () => {
+            row.remove();
+            ElementBuiler.syncOverlayHint();
+            ElementBuiler.previewDraft();
+        };
+        return row;
+    }
+
+    static addOverlay(icon) {
+        document.querySelector('#overlays-editor')
+            .appendChild(ElementBuiler.overlayRow({ icon }));
+        ElementBuiler.syncOverlayHint();
+        ElementBuiler.previewDraft();
+    }
+
+    static writeOverlays(list) {
+        const editor = document.querySelector('#overlays-editor');
+        editor.innerHTML = '';
+        for (const entry of list) editor.appendChild(ElementBuiler.overlayRow(entry));
+        ElementBuiler.syncOverlayHint();
+    }
+
+    /** Read the rows back, dropping any that lost their icon name. */
+    static readOverlays() {
+        const clamp = (value, lo, hi, fallback) => {
+            const n = Number(value);
+            return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback;
+        };
+        const pick = (row, cls) => row.querySelector(`.overlay-${cls}`).value;
+        return [...document.querySelectorAll('#overlays-editor .overlay-row')]
+            .map((row) => ({
+                icon: row.dataset.icon,
+                color: pick(row, 'color'),
+                size: clamp(pick(row, 'size'), 16, 900, 220),
+                x: clamp(pick(row, 'x'), -300, 300, 0),
+                y: clamp(pick(row, 'y'), -450, 450, 0),
+                rotate: clamp(pick(row, 'rotate'), -180, 180, 0),
+                opacity: clamp(pick(row, 'opacity'), 0, 100, 100),
+                flipX: row.querySelector('.overlay-flip').checked
+            }))
+            .filter((entry) => entry.icon);
+    }
+
+    /** The "nothing added yet" line only makes sense while there are no rows. */
+    static syncOverlayHint() {
+        document.querySelector('#overlay-empty').hidden =
+            document.querySelectorAll('#overlays-editor .overlay-row').length > 0;
+    }
+
     static readTextStyle() {
         return Object.fromEntries(TEXT_CONTROLS.map(([sel, key]) =>
             [key, controlValue(document.querySelector(sel))]));
@@ -1881,12 +2145,28 @@ class ElementBuiler {
         }
     }
 
-    static async previewDraft() {
+    /**
+     * Coalesced preview redraw. Resolves with the draw's warnings once the
+     * canvas has caught up — *including* any redraw folded into the run. A
+     * caller that coalesced used to get a promise that resolved immediately,
+     * so "Loading…" cleared while the image was still downloading and a slow
+     * background read as one that had failed.
+     */
+    static previewDraft() {
         // Sliders fire far faster than a draw completes; coalesce rather than
         // interleaving async draws, which would land out of order.
-        if (previewing) { previewDirty = true; return; }
+        if (previewing) {
+            previewDirty = true;
+            return previewRun;
+        }
         previewing = true;
+        previewRun = ElementBuiler.runPreview().finally(() => { previewing = false; });
+        return previewRun;
+    }
+
+    static async runPreview() {
         let poster;
+        let warnings = [];
         try {
             do {
                 previewDirty = false;
@@ -1894,18 +2174,18 @@ class ElementBuiler {
                 ElementBuiler.syncAdjustVisibility();
                 // Always draw: picking a colour or background with no text yet
                 // should still show it. Empty lines render as nothing.
-                await drawPoster(poster);
+                warnings = (await drawPoster(poster))?.warnings ?? [];
             } while (previewDirty);
         } catch (err) {
             // A throw here used to leave the canvas blank with no explanation.
             console.error('Preview failed:', err);
             UI.caption(`Preview failed: ${err.message}`);
-            return;
-        } finally {
-            previewing = false;
+            return [err.message];
         }
         document.querySelector('#path-preview').textContent = assetPath(poster.name);
-        UI.caption(poster.name || (poster.lines[0] ? poster.lines[0] : 'Untitled — add some text'));
+        UI.caption(warnings.length
+            ? `⚠ ${warnings.join('; ')}`
+            : poster.name || (poster.lines[0] ? poster.lines[0] : 'Untitled — add some text'));
 
         // No wrapping or auto-fit in PosterBuilder, so warn before export.
         // Measured at the poster's own size/spacing, not the old fixed 72/40.
@@ -1920,11 +2200,15 @@ class ElementBuiler {
             over.push('small text');
         }
 
+        const notes = [
+            over.length ? `⚠ ${over.join(' and ')} runs off the canvas — it will be cut off.` : '',
+            ...warnings.map((note) => `⚠ ${note[0].toUpperCase()}${note.slice(1)}.`)
+        ].filter(Boolean);
+
         const warning = document.querySelector('#edit-warning');
-        warning.hidden = !over.length;
-        warning.textContent = over.length
-            ? `⚠ ${over.join(' and ')} runs off the canvas — it will be cut off.`
-            : '';
+        warning.hidden = !notes.length;
+        warning.textContent = notes.join(' ');
+        return warnings;
     }
 
     static loadForm(i) {
@@ -1953,6 +2237,7 @@ class ElementBuiler {
         document.querySelector('#edit-x').value = poster.offsetX ?? 0;
         document.querySelector('#edit-y').value = poster.offsetY ?? 0;
         document.querySelector('#edit-dim').value = poster.dim ?? 0;
+        ElementBuiler.writeOverlays(poster.overlays ?? []);
         ElementBuiler.writeTextStyle(poster);
         ElementBuiler.syncAdjustVisibility();
         document.querySelector('#edit-save').textContent = 'Save changes';
@@ -2047,6 +2332,7 @@ class ElementBuiler {
         ElementBuiler.setNameLock(false);
         document.querySelector('#edit-border').checked = true;
         ElementBuiler.resetAdjustments();
+        ElementBuiler.writeOverlays([]);
         ElementBuiler.writeTextStyle(null);
         for (const sel of ['#edit-name', '#edit-image']) {
             document.querySelector(sel).value = '';
@@ -2074,7 +2360,8 @@ class ElementBuiler {
             return;
         }
         if (!confirm(`Apply this poster's style to ${targets.length} selected poster(s)?\n\n`
-            + 'Their text, names and backgrounds are left unchanged.')) {
+            + 'Their text, names and backgrounds are left unchanged.\n'
+            + "Overlays are part of the style, so they replace each poster's own.")) {
             return;
         }
 
@@ -2083,6 +2370,14 @@ class ElementBuiler {
             const target = list[i];
             if (!target) continue;
             for (const key of STYLE_FIELDS) target[key] = style[key];
+            // Overlays are a nested array, so each poster needs its own copy —
+            // sharing one would make editing a single poster's overlay silently
+            // change every other poster it was applied to.
+            if (style.overlays?.length) {
+                target.overlays = JSON.parse(JSON.stringify(style.overlays));
+            } else {
+                delete target.overlays;
+            }
             if (target.url || target.plexThumb) {
                 for (const key of IMAGE_STYLE_FIELDS) target[key] = style[key];
             }
@@ -2097,8 +2392,8 @@ class ElementBuiler {
         const poster = ElementBuiler.draftPoster();
         // An imported Plex poster is artwork with no text, so a background is
         // reason enough to save.
-        if (!poster.lines[0] && !poster.url && !poster.plexThumb) {
-            UI.caption('Give the poster some big text, or a background image.');
+        if (!poster.lines[0] && !poster.url && !poster.plexThumb && !poster.overlays?.length) {
+            UI.caption('Give the poster some text, a background image, or an overlay.');
             return;
         }
         if (!poster.name) {

@@ -119,10 +119,29 @@ between background and text). All are optional and their defaults reproduce the
 old plain-cover render, so nothing in `posters.js` needs them. The whole poster
 object is passed to `PosterBuilder.url()` as its options argument.
 
-**`PosterBuilder.cache`** memoises decoded images by path. The editor's sliders
-redraw on every `input` event and re-decoding a 4K wallpaper each time makes them
-unusable. Preview redraws are also coalesced via `previewing`/`previewDirty` in
-`sketch.js` so async draws can't land out of order.
+**`PosterBuilder.cache` memoises decoded images by path, and is bounded.** The
+editor's sliders redraw on every `input` event and re-decoding a 4K wallpaper
+each time makes them unusable. It used to be unbounded, which was fine for the
+600x900 PNGs in `assets/` but not for wallhaven originals: those are
+full-resolution, and a 1920x3413 PNG decodes to ~26MB of RGBA *whatever its file
+size*. A browsing session held hundreds of megabytes, the browser eventually
+refused to decode any more, and — because a failed load resolved `null` and
+`url()` simply drew nothing — backgrounds silently stopped appearing. It is now
+LRU with `CACHE_LIMIT` entries; a cache hit re-inserts so the image being edited
+can't be evicted mid-drag. `load()` also de-duplicates in-flight decodes via
+`pending`.
+
+**Nothing fails silently.** `PosterBuilder` collects a `warnings` array per
+draw — a background that wouldn't load, an overlay icon that wouldn't load, Plex
+artwork that couldn't be fetched. `drawPoster` returns the builder so callers can
+report them: the preview puts them in the caption and the warning line, the
+wallhaven picker says so on the thumbnail it just tried, and `runExport` counts
+them in the final message rather than shipping black rectangles unnoticed.
+
+Preview redraws are coalesced via `previewing`/`previewDirty`, and
+`previewDraft()` hands a coalescing caller the **in-flight** promise. Returning
+an immediately-resolved one made a slow background read as a failed one: the
+wallhaven "Loading…" status cleared before the image had arrived.
 
 **Colours come from the `COLORS` array in sketch.js.** Seasons use `#FFA133`,
 Simkl trending uses `#33A1FF`. Entries with no `url` and no `color` get a random
@@ -150,6 +169,56 @@ store the CDN URL, so they cost almost nothing in localStorage.
 `drawPoster` does this — otherwise the poster silently renders in the fallback
 font. Concurrent requests for the same font are de-duplicated via a `pending`
 map, since a slider drag can ask for one many times before the first resolves.
+
+## Icon overlays (Iconify)
+
+Posters may carry an `overlays` array of icon layers, drawn between the dim wash
+and the text so text stays legible on top. Each entry is
+`{icon, color, size, x, y, rotate, opacity, flipX}`; only `icon` (an Iconify name
+like `mdi:star`) is required, and `PosterBuilder.OVERLAY_DEFAULTS` fills the rest.
+The key is **absent** on posters without overlays, so every existing entry renders
+byte-identical and `posters.js` needs no change.
+
+`api.iconify.design` sends `access-control-allow-origin: *` on both the search
+and SVG endpoints, so unlike wallhaven this needs **no proxy route in
+`index.js`**, no API key and no account — which is also why it doesn't run into
+the objection that killed the Puter.js idea. ~200k icons across 150+ open-source
+sets; licences vary per set and the search response carries them, so the picker
+puts the licence in each thumbnail's tooltip.
+
+**SVG source is fetched as text, not pointed at with `loadImage`.** Two reasons.
+Recolouring is then a local `currentColor` replace, so dragging the colour picker
+costs no network round trip. And the `data:` URL built from it is same-origin —
+a cross-origin SVG on the canvas risks tainting it, and a tainted canvas makes
+`toDataURL()` throw for *every* poster in the run, not just that one. Same
+reasoning as `Plex.thumbUrl()`.
+
+Iconify serves monochrome icons as `fill="currentColor"`, so the replace is a
+true recolour rather than a tint — the thing a PNG database could not offer.
+Multi-colour sets (twemoji, noto, the `-poly` sets) carry real fills and are
+deliberately left alone; the picker flags them via the `palette` flag in the
+search response.
+
+The source is sized `1em`, which an `<img>` decode cannot resolve, so real pixels
+are substituted — **scoped to the opening `<svg>` tag**, because a bare
+first-match replace would rewrite a child `<rect>`'s width on any icon whose root
+carries none. Non-square viewBoxes letterbox inside the square under the default
+`preserveAspectRatio`, which makes `size` the longest side rather than a
+distortion.
+
+Two caches, because they have different lifetimes: `iconSources` holds raw SVG
+text per icon forever (tiny), while `iconCache` holds decoded images per
+name+colour+size and is capped at `ICON_LIMIT` with oldest-first eviction — a
+colour drag mints a new key on every input event. Keep that limit low: a
+1024px raster is ~4MB, so the cap is a memory budget, not a convenience.
+Raster size is rounded up to a 128px bucket so a size drag reuses a handful of
+decodes. `PosterBuilder.decode()`
+was split out of `load()` for this: `load()`'s cache is unbounded by design and
+icons must not land in it.
+
+`overlays` is copied by **Apply style to selected**, deep-copied per poster —
+sharing one array would make editing a single poster's overlay silently change
+every other poster it was applied to. It rides along in backups automatically.
 
 ## Plex integration
 
@@ -322,10 +391,20 @@ is public at `abcattell91/kometa-poster-creator`.
 
 Unverified in a real browser, and worth exercising first if touched:
 
-- **Upload to Plex** writes to the user's server, so it has never been run
-  end to end from here. Poster locking is a `PUT`, which unlike the upload needs
-  a CORS preflight the server may not answer.
+- **Icon overlays.** Driven end to end under jsdom (editor round trip, save/
+  reload, draw order, the SVG rewrite against five live icons), but never
+  rendered by a real canvas. The one thing jsdom cannot answer is whether the
+  browser decodes the `data:` SVG and leaves the canvas exportable — check by
+  adding an overlay and hitting Download .zip.
+
 - **Backup → clear site data → restore**, the scenario backup exists for.
+
+**Upload to Plex is confirmed working** against a real server (2026-08-08) — the
+no-`Content-Type` simple-request approach holds up in practice, so don't
+"helpfully" add an `image/png` header to it. Still unconfirmed: **poster
+locking**, which is a `PUT` and so needs a CORS preflight the server may not
+answer. Its failures are already tracked separately from upload failures, so a
+lock that fails will say so without reading as a failed upload.
 
 Ideas raised and deliberately not built:
 
@@ -333,9 +412,14 @@ Ideas raised and deliberately not built:
   Puter account, and loading a third-party script onto the same origin as the
   Plex token widens who can read that token. The procedural patterns cover the
   same ground without either problem.
-- **Layering a transparent overlay over a base image.** Came up when stacking
-  was happening accidentally through an uncleared canvas. Worth building
-  deliberately — Kometa's `separators/` art is designed for it — but it needs
-  its own layer with position and opacity, not a drawing-order side effect.
+- **Layering a raster image over a base image.** The icon overlay layer above
+  covers the vector case. Kometa's `separators/` art is raster and designed for
+  stacking, so pointing an overlay entry at an arbitrary image URL instead of an
+  Iconify name is the obvious extension — the layer, its transforms and the
+  editor rows already exist. A raster overlay can only be *tinted*, not
+  recoloured, so the colour control would have to behave differently for it.
+- **Dragging an overlay on the canvas.** Position is typed into number boxes
+  today. The canvas has no hit-testing of any kind, so this needs real work,
+  not a tweak.
 - **Rounding the white poster frame.** Only the text plate rounds today; the
   frame is drawn by `side()` and rounding it would leave square PNG corners.

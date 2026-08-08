@@ -2163,13 +2163,16 @@ class ElementBuiler {
         // Must never reject: callers consume this to clear a status line, and a
         // rejection would leave "Loading…" on screen for good. runPreview()
         // guards its draw loop, but not the caption and overflow work after it.
+        // Note this deliberately does *not* release `previewing` — runPreview
+        // does that itself, the moment its loop exits. Clearing it out here
+        // instead would keep the door shut through the reporting tail, and a
+        // redraw arriving then would be dropped (see the comment there).
         previewRun = ElementBuiler.runPreview()
             .catch((err) => {
                 console.error('Preview failed:', err);
                 UI.caption(`Preview failed: ${err.message}`);
                 return [err.message];
-            })
-            .finally(() => { previewing = false; });
+            });
         return previewRun;
     }
 
@@ -2190,6 +2193,12 @@ class ElementBuiler {
             console.error('Preview failed:', err);
             UI.caption(`Preview failed: ${err.message}`);
             return [err.message];
+        } finally {
+            // Released the instant the loop exits, *not* once this whole
+            // function has. Everything below still takes a while — it measures
+            // every line of text — and a redraw asked for during it would set
+            // previewDirty with no loop left to read it, and be dropped.
+            previewing = false;
         }
         document.querySelector('#path-preview').textContent = assetPath(poster.name);
         UI.caption(warnings.length

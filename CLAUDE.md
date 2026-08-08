@@ -143,6 +143,14 @@ Preview redraws are coalesced via `previewing`/`previewDirty`, and
 an immediately-resolved one made a slow background read as a failed one: the
 wallhaven "Loading…" status cleared before the image had arrived.
 
+**`previewing` must be cleared the instant the draw loop exits** — it lives in a
+`finally` on the loop's own try, not on the promise chain. `runPreview()` keeps
+working after the loop (caption, path preview, and a `measure()` per line of
+text), and a redraw asked for during that window would raise `previewDirty` with
+no loop left to read it, and be silently dropped. Moving that assignment onto
+the returned promise looks tidier and reintroduces exactly this bug; the harness
+covers it.
+
 **Colours come from the `COLORS` array in sketch.js.** Seasons use `#FFA133`,
 Simkl trending uses `#33A1FF`. Entries with no `url` and no `color` get a random
 colour each run, which makes output non-reproducible.
